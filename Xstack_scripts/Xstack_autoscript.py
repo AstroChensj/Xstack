@@ -106,8 +106,8 @@ def main():
 
         b = pyfits.open(backfile)
         bheader = b["SPECTRUM"].header
-        assert "ANCRFILE" not in bheader or bheader["ANCRFILE"] == header["ANCRFILE"], "background must have same ARF"
-        
+        assert bheader.get("ANCRFILE", "none") in ("none", header["ANCRFILE"]), f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}'
+
         z = float(open(filename + ".z").read())
         z_lst.append(z)
         nh = float(open(filename + ".nh").read())
