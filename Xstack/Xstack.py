@@ -128,7 +128,7 @@ class XstackRunner:
 
         # creating output directory
         self.outdir = os.path.dirname(prefix)
-        if self.outdir is not "":
+        if self.outdir != "":
             os.makedirs(self.outdir,exist_ok=True)
 
         prefix_base = os.path.basename(prefix)
@@ -220,7 +220,7 @@ class XstackRunner:
             fene_fits(self.srcid_lst,self.arffene_lst,self.fene_lst,self.o_fene_name)
 
         # Move all output files to outdir
-        if self.outdir is not "":
+        if self.outdir != "":
             os.system(f"mv {self.o_pi_name} {self.o_bkgpi_name} {self.o_arf_name} {self.o_rmf_name} {self.o_fene_name} {self.outdir}")
 
         del self.rspmat_sft_lst # to clear memory
@@ -280,7 +280,7 @@ class XstackRunner:
         arf_nonzero_mask = (arf_sft!=0)
         arffene = arfene_ce[arf_nonzero_mask][0]
         pi_nonzero_mask = (pi_sft!=0)
-        fene = ene_ce[pi_nonzero_mask][0]
+        fene = ene_ce[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1
         
         del hdu["MATRIX"].data, hdu["EBOUNDS"].data  # to clear memory
 
