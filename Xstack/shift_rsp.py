@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+==========================================
+Module for shifting and stacking responses
+==========================================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
+
+
+"""
 import numpy as np
 from astropy.io import fits
 from numba import jit
@@ -12,11 +23,15 @@ from tqdm import tqdm
 def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
     """
     Shift the ARF&RMF. This is literally done by three steps: 
-    1) Combine input ARF and RMF into a single RSP matrix (full response);
-    1) Shift in the direction of output channel energy. That is to say, shift and broaden the probability profile for 
-       each input energy (i.e. when the detector receive a photon with some input energy, the probability that a signal 
-       at some output channel energy will be observed; so this is a function of output channel energy) by (1+z); 
-    2) Shift in the direction of input energy by (1+z), with height (effective area) unchanged.
+    1. Combine input ARF and RMF into a single RSP matrix (full response);
+    2. Shift in the direction of output channel energy. That is to say, 
+       shift and broaden the probability profile for each input energy 
+       (i.e. when the detector receive a photon with some input energy, 
+       the probability that a signal at some output channel energy will 
+       be observed; so this is a function of output channel energy) by 
+       (1+z); 
+    3. Shift in the direction of input energy by (1+z), with height 
+       (effective area) unchanged.
     
     Parameters
     ----------
@@ -27,16 +42,22 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
     z : float
         Redshift.
     nh_file : str, optional
-        Galactic absorption profile (absorption factor vs. energy). If specified, galactic absorption 
-        correction will be applied on the ARF before shifting.
+        Galactic absorption profile (absorption factor vs. energy). If 
+        specified, galactic absorption correction will be applied on the 
+        ARF before shifting.
         - Should be in txt format. 
-        - Should also contain the following columns in the first extension: `nhene_ce`, `nhene_wd`, `factor`.
+        - Should also contain the following columns in the first 
+          extension: `nhene_ce`, `nhene_wd`, `factor`.
         - `factor` should indicate the absorption factor when nh=1e20.
-        - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
+        - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` 
+          with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
     nh : float, optional
-        The galactic absorption nh of the source (e.g. 3e20). Defaults to 1e20.
+        The galactic absorption nh of the source (e.g. 3e20). Defaults 
+        to 1e20.
     ene_trc : float, optional
-        Truncate energy below which manually set ARF and PI counts to zero. For eROSITA, `ene_trc` is typically 0.2 keV. Defaults to None.
+        Truncate energy below which manually set ARF and PI counts to 
+        zero. For eROSITA, `ene_trc` is typically 0.2 keV. Defaults to 
+        None.
 
     Returns
     -------
@@ -126,9 +147,11 @@ def add_rsp(
     ene_hi : numpy.ndarray, optional
         Upper edge of output channel energy bin. Defaults to None.
     arfene_lo : numpy.ndarray, optional
-        Lower edge of input model energy (ARF energy) bin. Defaults to None.
+        Lower edge of input model energy (ARF energy) bin. Defaults to 
+        None.
     arfene_hi : numpy.ndarray, optional
-        Upper edge of input model energy (ARF energy) bin. Defaults to None.
+        Upper edge of input model energy (ARF energy) bin. Defaults to 
+        None.
     expo_lst : numpy.ndarray, optional
         Exposure list. Defaults to None
     int_rng : tuple of (float,float)
@@ -144,23 +167,39 @@ def add_rsp(
         output energy channel. This is used in the `SHP` method, to 
         calculate the weight of each response. Defaults to 0.0 (a flat 
         spectrum).
+    extended : bool, optional
+        Whether or not the source is extended. Defaults to False, i.e., 
+        a point source.
+    rega_lst : list or numpy.ndarray, optional
+        `REGAREA` list. Used when `extended`==True.
     outarf_name : str, optional
-        If specified, extract the ARF from the stacked RSP and create a fits file named `outarf_name`. Defaults to None.
+        If specified, extract the ARF from the stacked RSP and create a 
+        fits file named `outarf_name`. Defaults to None.
     sample_arf : str, optional
-        A sample ARF to read `arfene_lo` and `arfene_hi`. Defaults to "sample.arf".
+        A sample ARF to read `arfene_lo` and `arfene_hi`. Defaults to 
+        "sample.arf".
     srcid_lst : list or numpy.ndarray
         Source ID list. Defaults to None.
     outrmf_name : str, optional
-        If specified, extract the RMF from the stacked RSP and create a fits file named `outrmf_name`. Defaults to None.
+        If specified, extract the RMF from the stacked RSP and create a 
+        fits file named `outrmf_name`. Defaults to None.
     sample_rmf : str, optional
-        A sample RMF to read `ene_lo` and `ene_hi`. Defaults to "sample.rmf".
+        A sample RMF to read `ene_lo` and `ene_hi`. Defaults to 
+        "sample.rmf".
     
     Returns
     -------
     sum_specresp : numpy.ndarray
         The effective ARF profile extracted from the stacked RSP.
     sum_prob : numpy.ndarray
-        The effective RMF 2D probability matrix extracted from the stacked RSP.
+        The effective RMF 2D probability matrix extracted from the 
+        stacked RSP.
+    expo_stacked : float
+        The stacked `EXPOSURE` to be written in headers of all stacked 
+        files.
+    rega_stacked : float
+        The stacked `REGAREA` to be written in headers of all stacked 
+        files.
     """
     rspmat_lst = np.array(rspmat_lst)
     pi_lst = np.array(pi_lst)
@@ -464,7 +503,8 @@ def shift_matrix_nonpar(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
 
 def project_rspmat(rspmat,ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="CHANNEL",gamma=2.):
     """
-    Project the 2D RSP matrix onto CHANNEL/MODEL energy axis, to get the effective specresp (cm^2 vs. energy)
+    Project the 2D RSP matrix onto CHANNEL/MODEL energy axis, to get the 
+    effective specresp (cm^2 vs. energy)
     
     Parameters
     ----------
@@ -478,13 +518,20 @@ def project_rspmat(rspmat,ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="CHANNEL",
         Lower edge of input model energy (ARF energy) bin.
     arfene_hi : numpy.ndarray
         Upper edge of input model energy (ARF energy) bin.
-    proj_axis : str
+    proj_axis : str, optional
         The projection axis. Available options are:
-        - `CHANNEL`: project on output channel energy axis. Note that to do this projection, we would nevertheless need to assume a spectral slope, or photo index (specified in `gamma`). This is to match the convention of unfolded spectrum (in e.g., XSPEC), where the effective area anchored on channel energy axis is in fact (folded model)/(model).
+        - `CHANNEL`: project on output channel energy axis. Note that to 
+           do this projection, we would nevertheless need to assume a 
+           spectral slope, or photo index (specified in `gamma`). This is 
+           to match the convention of unfolded spectrum (in e.g., XSPEC), 
+           where the effective area anchored on channel energy axis is in 
+           fact (folded model)/(model).
         - `MODEL`: project on input model energy axis
         Defaults to `CHANNEL`.
-    gamma : float
-        The spectral slope. Defaults to 2.0. This is only used when `proj_axis` is `CHANNEL`. For AGN sources, a powerlaw with photon index of 2.0 is a good approximation.
+    gamma : float, optional
+        The spectral slope. Defaults to 2.0. This is only used when 
+        `proj_axis` is `CHANNEL`. For AGN sources, a powerlaw with 
+        photon index of 2.0 is a good approximation.
 
     Returns
     -------
@@ -752,12 +799,14 @@ def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):
 
 def get_prob(mat,ebo):
     """
-    Parse the RMF file (input the `MATRIX` and `EBOUNDS` extension) into a 2D probability matrix. 
+    Parse the RMF file (input the `MATRIX` and `EBOUNDS` extension) into 
+    a 2D probability matrix. 
 
     Parameters
     ----------
     mat : astropy.io.fits.FITS_rec
-        The `MATRIX` extension of a standard OGIP RMF file. Must include the following columns:
+        The `MATRIX` extension of a standard OGIP RMF file. Must include 
+        the following columns:
         - `ENERG_LO`
         - `ENERG_HI`
         - `N_GRP`
@@ -765,7 +814,8 @@ def get_prob(mat,ebo):
         - `N_CHAN`
         - `MATRIX`
     ebo : astropy.io.fits.FITS_rec
-        The `EBOUNDS` extension of a standard OGIP RMF file. Must include the following columns:
+        The `EBOUNDS` extension of a standard OGIP RMF file. Must include 
+        the following columns:
         - `E_MIN` 
         - `E_MAX`
 
@@ -809,27 +859,34 @@ def get_prob(mat,ebo):
 
 def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=0):
     """
-    Get the 1d probability distribution for output channel energy at a specific input model energy.
+    Get the 1d probability distribution for output channel energy at a 
+    specific input model energy.
 
     Parameters
     ----------
     n_grp : int
-        `N_GRP` array of your specific input model energy, from `MATRIX` extension.
+        `N_GRP` array of your specific input model energy, from `MATRIX` 
+        extension.
     f_chan : int
-        `F_CHAN` array of your specific input model energy, from `MATRIX` extension.
+        `F_CHAN` array of your specific input model energy, from `MATRIX` 
+        extension.
     n_chan : int
-        `N_CHAN` array of your specific input model energy, from `MATRIX` extension.
+        `N_CHAN` array of your specific input model energy, from `MATRIX` 
+        extension.
     matrix1d : numpy.ndarray
-        `MATRIX` array of your specific input model energy, from `MATRIX` extension.
+        `MATRIX` array of your specific input model energy, from `MATRIX` 
+        extension.
     Nene : int
         Length of output channel energy.
     f_chan_0 : int, optional
-        The index number of the first output channel energy (0 or 1). Defaults to 0.
+        The index number of the first output channel energy (0 or 1). 
+        Defaults to 0.
 
     Returns
     -------
     prob1d : numpy.ndarray
-        The 1d probability distribution for output channel energy at a specific input model energy.
+        The 1d probability distribution for output channel energy at a 
+        specific input model energy.
     """
     f_matrix = 0   # starting index of matrix1d
     prob1d = np.zeros(Nene)

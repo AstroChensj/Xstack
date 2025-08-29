@@ -3,7 +3,9 @@
 ===========================================
 Module for shifting and stacking PI spectra
 ===========================================
-:Author:    Shi-Jiang Chen
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
 :Email:     JohnnyCsj666@gmail.com
 
 
@@ -305,11 +307,13 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
 
 def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
     """
-    The weighted sum of background PI files. The weights are specified by `bkgscal_lst`.
+    The weighted sum of background PI files. The weights are specified by 
+    `bkgscal_lst`.
     
-    Group sources into bins of similar scaling ratio (considering both BACKSCAL and 
-    EXPOSURE) For each group, sum the background counts, and compute the uncertainty 
-    with Poisson statistics. Then sum the groups, scaling with the averaged scaling 
+    Group sources into bins of similar bkg-to-source scaling ratio 
+    (considering both `BACKSCAL` and `EXPOSURE`) For each group, sum the 
+    background counts, and compute the uncertainty with Poisson 
+    statistics. Then sum the groups, scaling with the averaged scaling 
     ratio, and use Gaussian error propagation.
     
     Parameters
@@ -319,11 +323,14 @@ def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
     bkgscal_lst : list or numpy.ndrray
         Scaling ratio list.
     Ngrp : int, optional
-        Number of groups with similar background-to-source scaling ratio. Defaults to 10.
+        Number of groups with similar background-to-source scaling ratio. 
+        Defaults to 10.
     fits_name : str, optional
-        If specified, create a fits file with name `fits_name`. Defaults to None.
+        If specified, create a fits file with name `fits_name`. Defaults 
+        to None.
     expo : float, optional
-        Total exposure time (seconds) to be written in the header of `fits_name`. Defaults to 10.
+        Total exposure time (seconds) to be written in the header of 
+        `fits_name`. Defaults to 10.
     
     Returns
     -------
@@ -405,7 +412,8 @@ def get_bkgscal(src_file,bkg_file=None):
     src_file : str
         Source PI spectrum name.
     bkg_file : str, optional
-        Background PI spectrum name. If not specified, will look for it from the header of src_file.
+        Background PI spectrum name. If not specified, will look for it 
+        from the header of src_file.
     
     Returns
     -------
@@ -428,8 +436,8 @@ def get_bkgscal(src_file,bkg_file=None):
 
         T_\mathrm{ave} \equiv `BACKSCL`/`REGAREA` * `EXPOSURE`
 
-    where `REGAREA`/`BACKSCAL` is the region-covering-incompleteness-correcting
-    factor.
+    where `REGAREA`/`BACKSCAL` is the region-covering-incompleteness-
+    correcting factor.
     """
     with fits.open(src_file) as hdu:
         head = hdu["SPECTRUM"].header
@@ -494,22 +502,28 @@ def get_rega(src_file):
 
 def make_bkggrpflg(bkgscal_lst,Ngrp=4):
     """
-    Group the `bkgscal_lst` into `Ngrp` groups, according to the scaling ratios. 
-    Return an array `bkggrpflg_lst` that tells you which group each background PI spectrum should be assigned to.
+    Group the background spectra into `Ngrp` groups, according to the 
+    bkg-to-source scaling ratios. 
+
+    Return an array `bkggrpflg_lst` that tells you which group each 
+    background PI spectrum should be assigned to.
     
     Parameters
     ----------
     bkgscal_lst : list or numpy.ndarray
-        The list of scaling-ratio (considering both BACKSCAL and EXPOSURE) for each background PI spectrum.
+        The list of bkg-to-source scaling ratio (considering both 
+        `BACKSCAL` and `EXPOSURE`) for each background PI spectrum.
     Ngrp : int, optional
         The number of groups to be created. Defaults to 4.
     
     Returns
     -------
     bkggrpflg_lst : numpy.ndarray
-        An array that indicates which group each background PI spectrum should be assigned to (length = len(bkgscal_lst)).
+        An array that indicates which group each background PI spectrum 
+        should be assigned to (length = len(bkgscal_lst)).
     bkgscal_ave_lst : numpy.ndrray
-        The average scaling-ratio of each group (length = `Ngrp`).
+        The average bkg-to-source scaling ratio of each group 
+        (length = `Ngrp`).
     """
     idx_lst = np.argsort(bkgscal_lst)
     idx_lo = np.array([int(len(idx_lst) / Ngrp * i) for i in range(Ngrp)])
