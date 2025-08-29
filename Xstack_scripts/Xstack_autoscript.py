@@ -5,7 +5,7 @@ X-ray spectral stacking is non-trivial compared to optical spectral stacking. Th
 1) X-ray has much fewer photon counts (Poisson), meaning that spectral counts and uncertainties cannot be scaled simultaneously (as compared to optical); 
 2) X-ray has non-diagonal, complex response, meaning that the response needs to be taken into account when stacking.
 
-To tackle these issues, we develop Xstack: a open-source, and comprehensive standalone pipeline code for X-ray spectral stacking. The methodology is to first sum all (rest-frame) PI spectra, without any scaling; and then sum the response files (ARFs and RMFs), each with appropriate weighting factors to preserve the overall spectral shape.
+To tackle these issues, we develop Xstack: a standalone pipeline code for X-ray spectral stacking. The methodology is to first sum all (rest-frame) PI spectra, without any scaling; and then sum the response files (ARFs and RMFs), each with appropriate weighting factors to preserve the overall spectral shape.
 
 The key features of Xstack are: 
 1) properly account account for individual spectral contribution to the final stack, by assigning data-driven ARF weighting factors; 
@@ -70,6 +70,7 @@ parser.add_argument("--flux_energy_hi", type=float, default=2.3, help="upper end
 parser.add_argument("--nthreads", type=int, default=10, help="number of cpus used for RMF shifting")
 parser.add_argument("--num_bkg_groups", type=int, default=10, help="number of background groups")
 parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
+parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
 parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
 # below are for bootstrap (either bootstrap or KFold)
 parser.add_argument("--resample_method", type=str, default="None", help="method for performing resampling; 'None': no resampling, 'bootstrap': use bootstrap, 'KFold': use KFold)")
@@ -140,6 +141,7 @@ def main():
             nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
             Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
             ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
+            extended=args.extended,                         # extended sources?
             nthreads=args.nthreads,                         # number of cpus used for RMF shifting
             prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
         ).run()
@@ -162,6 +164,7 @@ def main():
             nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
             Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
             ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
+            extended=args.extended,                         # extended sources?
             nthreads=args.nthreads,                         # number of cpus used for RMF shifting
             resample_method=args.resample_method,           # resample method: `bootstrap` or `KFold`
             num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
@@ -195,6 +198,7 @@ def main():
             nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
             Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
             ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
+            extended=args.extended,                         # extended sources?
             nthreads=args.nthreads,                         # number of cpus used for RMF shifting
             resample_method=args.resample_method,           # resample method: `bootstrap` or `KFold`
             K=args.K,                                       # number of subgroups to divide the original sample into in `KFold` method

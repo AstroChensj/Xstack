@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-This is the bootstrap (resampling) wrapper module for all spectral shifting+stacking procedures, by repeatedly calling Xstack.py. 
-
-Authors: Shi-Jiang Chen (MPE, USTC), Johannes Buchner (MPE), Teng Liu (USTC)
-Contact: JohnnyCsj666@gmail.com
+======================================================================
+Bootstrap wrapper module for all spectral shifting+stacking procedures
+======================================================================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
 
 """
 import numpy as np
@@ -48,7 +51,7 @@ class resample_XstackRunner:
     ```
     """
     def __init__(
-            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,nthreads=1,resample_method="bootstrap",num_bootstrap=10,bootstrap_portion=1.0,K=4,Ksort_lst=None,prefix="./results/stacked_",
+            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,resample_method="bootstrap",num_bootstrap=10,bootstrap_portion=1.0,K=4,Ksort_lst=None,prefix="./results/stacked_",
         ):
         """
         Parameters
@@ -90,6 +93,10 @@ class resample_XstackRunner:
             Number of groups with similar background-to-source scaling ratio. Defaults to 10.
         ene_trc : float, optional
             Truncate energy below which manually set ARF and PI counts to zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. Defaults to None.
+        extended : bool, optional
+            Whether or not are the sources to be stacked extended sources. 
+            The calculation of response weights would be affected. 
+            Defaults to False, i.e., they are point sources.
         nthreads : int, optional
             Number of CPUs used in shifting RSP.
         resample_method : str, optional
@@ -139,6 +146,7 @@ class resample_XstackRunner:
         else:
             self.Nbkggrp = Nbkggrp
         self.ene_trc = ene_trc
+        self.extended = extended
         self.nthreads = nthreads
         self.resample_method = resample_method
         if resample_method not in ["bootstrap","KFold"]:
@@ -198,6 +206,7 @@ class resample_XstackRunner:
                     nh_file=self.nh_file,
                     Nbkggrp=self.Nbkggrp,
                     ene_trc=self.ene_trc,
+                    extended=self.extended,
                     nthreads=self.nthreads,
                     prefix=prefix_i,
                 )
@@ -247,6 +256,7 @@ class resample_XstackRunner:
                     nh_file=self.nh_file,
                     Nbkggrp=self.Nbkggrp,
                     ene_trc=self.ene_trc,
+                    extended=self.extended,
                     nthreads=self.nthreads,
                     prefix=prefix_i,
                 )

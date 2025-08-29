@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-This is the main wrapper module for all spectral shifting+stacking procedures. 
-
-Authors: Shi-Jiang Chen (MPE, USTC), Johannes Buchner (MPE), Teng Liu (USTC)
-Contact: JohnnyCsj666@gmail.com
+=================================================================
+Main wrapper module for all spectral shifting+stacking procedures
+=================================================================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
 
 """
 from .shift_pi import *
@@ -46,7 +49,7 @@ class XstackRunner:
     ```
     """
     def __init__(
-            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,nthreads=1,prefix="./results/stacked_",
+            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,prefix="./results/stacked_",
         ):
         """
         Parameters
@@ -62,36 +65,59 @@ class XstackRunner:
         bkgpifile_lst : list or numpy.ndarray, optional
             The input background PI spectrum list. Defaults to None.
         nh_lst : list or numpy.ndarray, optional
-            The Galactic absorption column density list (in units of 1 cm^{-2}). Defaults to None.
+            The Galactic absorption column density list (in units of 
+            1 cm^{-2}). Defaults to None.
         srcid_lst : list or numpy.ndarray, optional
             The source ID list. Defaults to None.
         rspwt_method : str, optional
-            Method for calculating ARFSCAL. Defaults to `SHP`. Available methods are:
-            - `SHP`: assuming all sources have same spectral shape, recommended
-            - `FLX`: assuming all sources have same flux (erg/s/cm^2)
-            - `LMN`: assuming all sources have same luminosity (erg/s)
+            Method for calculating ARFSCAL. Defaults to `SHP`. Available 
+            methods are:
+            - `SHP`: assuming all sources have same spectral shape, 
+              recommended
+            - `FLX`: assuming all sources have same spectral shape and 
+              flux ([erg/cm^2/s] for point sources while 
+              [erg/cm^2/s/deg^2] for extended sources)
+            - `LMN`: assuming all sources have same spectral shape and 
+              luminosity ([erg/s] for point sources while [erg/s/deg^2] 
+              for extended sources)
         rspproj_gamma : float, optional
-            The prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).
+            The prior photon index value for projecting RSP matrix onto 
+            the output energy channel. This is used in the `SHP` method, 
+            to calculate the weight of each response. Defaults to 2.0 
+            (typical for AGN).
         int_rng : tuple of (float,float), optional
-            The energy (keV) range for computing flux. Defaults to (1.0,2.3).
+            The energy (keV) range for computing flux. Defaults to 
+            (1.0,2.3).
         sample_rmf : str, optional
             Name of sample RMF. Defaults to None.
         sample_arf : str, optional
             Name of sample ARF. Defaults to None.
         nh_file : str, optional
-            Galactic absorption profile (absorption factor vs. energy) at 1e20 cm^{-2}. If specified, galactic absorption correction will be applied on the ARF before shifting.
-            - Should be in txt format. 
-            - Should also contain the following columns in the first extension: `nhene_ce`, `nhene_wd`, `factor`.
+            Galactic absorption profile (absorption factor vs. energy) 
+            at 1e20 cm^{-2}. If specified, galactic absorption correction 
+            will be applied on the ARF before shifting.
+            - Should be in .txt format. 
+            - Should also contain the following columns in the first 
+              extension: `nhene_ce`, `nhene_wd`, `factor`.
             - `factor` should indicate the absorption factor when nh=1e20.
-            - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
+            - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` 
+              with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
         Nbkggrp : int, optional
-            Number of groups with similar background-to-source scaling ratio. Defaults to 10.
+            Number of groups with similar background-to-source scaling 
+            ratio. Defaults to 10.
         ene_trc : float, optional
-            Truncate energy below which manually set ARF and PI counts to zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. Defaults to None.
+            Truncate energy below which manually set ARF and PI counts to 
+            zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. 
+            Defaults to None.
+        extended : bool, optional
+            Whether or not are the sources to be stacked extended sources. 
+            The calculation of response weights would be affected. 
+            Defaults to False, i.e., they are point sources.
         nthreads : int, optional
             Number of CPUs used in shifting RSP.
         prefix : str, optional
-            Prefix for output stacked PI, BKGPI, ARF, and RMF files. Defaults to './results/stacked_'
+            Prefix for output stacked PI, BKGPI, ARF, and RMF files. 
+            Defaults to './results/stacked_'
         """
         self.pifile_lst = pifile_lst
         self.arffile_lst = arffile_lst
@@ -124,6 +150,7 @@ class XstackRunner:
         else:
             self.Nbkggrp = Nbkggrp
         self.ene_trc = ene_trc
+        self.extended = extended
         self.nthreads = nthreads
 
         # creating output directory
@@ -145,8 +172,10 @@ class XstackRunner:
 
         self.bkgscal_lst = []
         self.expo_lst = []
+        self.rega_lst = []
         self.arffene_lst = []
         self.fene_lst = []
+
 
     def run(self):
         """
@@ -166,6 +195,7 @@ class XstackRunner:
         print(f"RSP projection gamma: {self.rspproj_gamma}")
         print(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV (used only in `SHP` mode)")
         print(f"ARF Truncation energy: {self.ene_trc} keV")
+        print(f"Source type: {'extended sources' if self.extended else 'point sources'}")
         print(f"Number of CPUs used for shifting RMF: {self.nthreads}")
         print(f"Number of background groups: {self.Nbkggrp}")
         print(f"Output directory: {self.outdir}")
@@ -192,12 +222,13 @@ class XstackRunner:
         ## use backend="loky" to avoid memory leakage
         results = Parallel(n_jobs=self.nthreads,backend="loky")(delayed(self.process_entry)(i) for i in tqdm(range(len(self.srcid_lst))))
         for result in results:
-            pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, arffene, fene = result
+            pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene = result
             self.pi_sft_lst.append(pi_sft)
             self.bkgpi_sft_lst.append(bkgpi_sft)
             self.rspmat_sft_lst.append(rspmat_sft)
             self.bkgscal_lst.append(bkgscal)
             self.expo_lst.append(expo)
+            self.rega_lst.append(rega)
             self.arffene_lst.append(arffene)
             self.fene_lst.append(fene)
         del results
@@ -212,9 +243,14 @@ class XstackRunner:
         bkgpi_stk,bkgpierr_stk = add_bkgpi(
             self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,Ngrp=self.Nbkggrp,fits_name=self.o_bkgpi_name,expo=expo,
         )
-        arf_stk, rmf_stk = add_rsp(
-            self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,ene_lo=ene_lo,ene_hi=ene_hi,arfene_lo=iene_lo,arfene_hi=iene_hi,expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,sample_rmf=self.sample_rmf
+        arf_stk, rmf_stk, expo_stacked, rega_stacked = add_rsp(
+            self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,ene_lo=ene_lo,ene_hi=ene_hi,arfene_lo=iene_lo,arfene_hi=iene_hi,expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,extended=self.extended,rega_lst=self.rega_lst,outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,sample_rmf=self.sample_rmf
         )
+        ## Update header of stacked PI
+        fits.setval(self.o_pi_name,ext=1,keyword="EXPOSURE",value=expo_stacked,comment="Stacked exposure time [s]")
+        fits.setval(self.o_pi_name,ext=1,keyword="REGAREA",value=rega_stacked,comment="Stacked region area [deg^2]")
+        fits.setval(self.o_bkgpi_name,ext=1,keyword="EXPOSURE",value=expo_stacked,comment="Stacked exposure time [s]")
+        fits.setval(self.o_bkgpi_name,ext=1,keyword="REGAREA",value=rega_stacked,comment="Stacked region area [deg^2]")
         
         if self.o_fene_name is not None:
             fene_fits(self.srcid_lst,self.arffene_lst,self.fene_lst,self.o_fene_name)
@@ -284,11 +320,12 @@ class XstackRunner:
         
         del hdu["MATRIX"].data, hdu["EBOUNDS"].data  # to clear memory
 
-        # EXPO & BKGSCAL
+        # BKGSCAL & EXPOSURE & REGAREA
         bkgscal = get_bkgscal(pifile,bkgpifile)
         expo = get_expo(pifile)
+        rega = get_rega(pifile)
         
         gc.collect()
 
-        return pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, arffene, fene
+        return pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene
     ##############################

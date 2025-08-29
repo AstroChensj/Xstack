@@ -1,6 +1,13 @@
-##############################################
-############ PI SHIFT & STACK ################
-##############################################
+#!/usr/bin/env python3
+"""
+===========================================
+Module for shifting and stacking PI spectra
+===========================================
+:Author:    Shi-Jiang Chen
+:Email:     JohnnyCsj666@gmail.com
+
+
+"""
 import numpy as np
 from astropy.io import fits
 import os
@@ -15,11 +22,13 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
     pi_file : str
         Observed-frame pi file to be shifted, in standard OGIP format.
     rmf_file : str
-        RMF file defining channel-energy conversion, in standard OGIP format.
+        RMF file defining channel-energy conversion, in standard OGIP 
+        format.
     z : float
         Redshift.
-    ene_trc : float
-        Truncate energy below which manually set ARF and PI counts to zero. For eROSITA, `ene_trc` is typically 0.2 keV.
+    ene_trc : float, optional
+        Truncate energy [keV] below which manually set ARF and PI counts 
+        to zero. For eROSITA, `ene_trc` is typically 0.2 keV.
     
     Returns
     -------
@@ -56,6 +65,7 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
         pi_coun[:idx_trc] = 0
     
     rest_chan = pi_chan.copy()
+    # rest_coun = np.zeros(len(rest_chan),dtype=int) # the src-frame photon counts
     rest_coun = np.zeros(len(rest_chan),dtype=int) # the src-frame photon counts
     
     ene_ubound = ene_lo.max()
@@ -78,13 +88,18 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
         
         chan_id_mask = chan_id[mask]
         
-        # for the first and last channel in the basket, we need to recalculate their widths
-        # this is because they are defined by chan_lo_map[i] and chan_hi_map[i], respectively
+        # For the first and last channel in the basket, we need to recalculate their widths
+        # This is because they are defined by chan_lo_map[i] and chan_hi_map[i], respectively
         ene_wd_mask[0] = ene_hi_mask[0] - ene_lo_map
         ene_wd_mask[-1] = ene_hi_map - ene_lo_mask[-1]
         
-        # each channel in the basket would get number of photons proportional to its width
+        # Each channel in the basket would get number of photons proportional to its width
         prob_mask = ene_wd_mask / ene_wd_mask.sum() # the probability of entering each channel in the basket
+        # # NOTE: we do not force each channel to have integer number of photon counts at this step
+        # # Instead, we round them to integers after stacking all sources (`add_pi`), where each channel accumulates sufficient photon counts
+        # # This would be helpful when each individual source has only few counts in total
+        # phoct_mask = (pi_coun[i] * prob_mask).astype(float)   # this is float
+
         phoct_mask = (pi_coun[i] * prob_mask).astype(int)
         # if there are more than 1 channel in the basket, we want to make sure that the sum of photons in all bins are equal to pi_coun[i]
         if len(phoct_mask) > 1:
@@ -102,25 +117,44 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
 
 def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=None,arf_file=None):
     """
-    The weighted sum of many PI files. The weights are specified by `scal_lst`. 
+    The weighted sum of many PI files. The weights are specified by 
+    `scal_lst`. 
     
     If source PIs are to be summed, the weights should all be unity.
-    Otherwise if background PIs are to be summed, the weights should be (as a return from function `get_bkgscal`):
-        `src_areascal / bkg_areascal * src_backscal / bkg_backscal * src_expo / bkg_expo`
+    Otherwise if background PIs are to be summed, the weights should 
+    be (as a return from function `get_bkgscal`):
+
+    ..
+
+        `AREASCAL`_src / `AREASCAL`_src * `BACKSCAL`_src / 
+        `BACKSCAL`_bkg * `EXPOSURE`_src / `EXPOSURE`_bkg
     
-    The uncertainty in each channel is calculated with Gaussian error propogation.
     
-    Caution should be taken when adding background spectra with varing scaling ratios:
-    1. If all backgrounds have same scaling ratio, we can simply add them together. 
-    2. However if the scaling ratio for each spectrum varies, we need to scale them first before summing together. Since 
-    the scaling ratio for background spectrum is often a number much smaller than 1, each scaled background spectrum 
-    may have float number of photon counts < 1 in some channel i. In this case, the uncertainty in channel i cannot 
-    be calculated with Poisson statistics (i.e. sqrt(N)). 
-    3. To conclude, `add_bkgpi` should be used when considering error of stacked background spectra with varied scaling 
-    ratio. `add_bkgpi` first group background spectra with similar scaling ratios, then calculate error for each group 
-    with Poisson statistics (each channel has enough photon counts now), and finally calculate the error for the total 
-    summed background spectra (each group of spectra is in high-counts regime, so Gaussian error propagation works).
-    4. Nevertheless for the photon counts (rather than the error), it is still recommended to use `add_pi`.
+    The uncertainty in each channel is calculated with Gaussian error 
+    propogation.
+    
+    Caution should be taken when adding background spectra with varing 
+    scaling ratios:
+
+    1. If all backgrounds have same scaling ratio, we can simply add them 
+       together. 
+    2. However if the scaling ratio for each spectrum varies, we need to 
+       scale them first before summing together. Since the scaling ratio 
+       for background spectrum is often a number much smaller than 1, 
+       each scaled background spectrum may have float number of photon 
+       counts < 1 in some channel i. In this case, the uncertainty in 
+       channel i cannot be calculated with Poisson statistics 
+       (i.e. :math: `\sqrt{N}` ). 
+    3. To conclude, `add_bkgpi` should be used when considering error of 
+       stacked background spectra with varied scaling ratio. `add_bkgpi` 
+       first group background spectra with similar scaling ratios, then 
+       calculate error for each group with Poisson statistics (each 
+       channel has enough photon counts now), and finally calculate the 
+       error for the total summed background spectra (each group of 
+       spectra is in high-counts regime, so Gaussian error propagation 
+       works).
+    4. Nevertheless for the photon counts (rather than the error), it is 
+       still recommended to use `add_pi`.
     
     Parameters
     ----------
@@ -129,15 +163,20 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     scal_lst : list or numpy.ndarray, optional
         Weight (scaling ratio) list. Defaults to None (unity).
     fits_name : str, optional
-        If specified, create a fits file with name `fits_name`. Defaults to None.
+        If specified, create a fits file with name `fits_name`. 
+        Defaults to None.
     expo : float, optional
-        Total exposure time (seconds) to be written in the header of `fits_name`. Defaults to 10.
+        Total exposure time (seconds) to be written in the header of 
+        `fits_name`. Defaults to 10.
     bkg_file : str, optional
-        Stacked background PI fits name to be written in the header of `fits_name`. Defaults to None.
+        Stacked background PI fits name to be written in the header of 
+        `fits_name`. Defaults to None.
     rmf_file : str, optional
-        Stacked RMF fits name to be written in the header of `fits_name`. Defaults to None.
+        Stacked RMF fits name to be written in the header of `fits_name`. 
+        Defaults to None.
     bkg_file : str, optional
-        Stacked ARF fits name to be written in the header of `fits_name`. Defaults to None.
+        Stacked ARF fits name to be written in the header of `fits_name`. 
+        Defaults to None.
     
     Returns
     -------
@@ -149,38 +188,57 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     Notes
     -----
     The Net counts for some source:
+
+    .. math::
+
+        \mathrm{net\ counts} = \mathrm{source\ counts} - 
+        \mathrm{background\ counts} \times \mathrm{scaling\ factor}
         
-        net counts = source counts - background counts * scaling factor                                           (1)
-        
-        where scaling factor = src_areascal / bkg_areascal * src_backscal / bkg_backscal * src_expo / bkg_expo,
-        and should be a return from function `get_bkgscal`.
+    where: 
+    
+    - `scaling factor` = `AREASCAL`_src / `AREASCAL`_src * `BACKSCAL`_src 
+      / `BACKSCAL`_bkg * `EXPOSURE`_src / `EXPOSURE`_bkg,
+      and should be a return from function `get_bkgscal`.
         
     The error propagation tells us that:
+
+    .. math::
     
-        Err(net)**2 = Err(source)**2 + Err(background)**2 * scaling factor**2                                     (2)
+        Err(net)^2 = Err(source)^2 + Err(background)^2 \times 
+        \mathrm{scaling\ factor}^2
         
     Assuming Poisson distribution,
+
+    .. math::
     
-        Err(source)**2 = source counts                                                                            (3)
-        Err(background)**2 = background counts                                                                    (4)
+        Err(source)^2 = \mathrm{source\ counts} \\
+        Err(background)^2 = \mathrm{background\ counts}
         
-    So the error for source spectrum and **scaled** background spectrum to be used in background subtracting should be:
+    So the error for source spectrum and **scaled** background spectrum 
+    to be used in background subtracting should be:
+
+    .. math::
         
-        Err(source,scaled) = sqrt(source counts)                                                                  (5)
-        Err(background,scaled) = sqrt(background counts) * scaling factor                                         (6)
+        Err(source,scaled) = \sqrt{\mathrm{source\ counts}} \\
+        Err(background,scaled) = \sqrt{\mathrm{background\ counts}} 
+        \times \mathrm{scaling\ factor}
         
-    Note that for the source spectrum, the scaling factor is by convention 1;
+    Note for source spectrum, scaling factor is by convention 1;
     so the two equations have same mathematical form.
     
-    Also note that the additional factor for the error is **scaling factor**, not **sqrt(scaling factor)**. This should
-    be reasonable:
+    Also note that the additional factor for the error is **scaling 
+    factor**, not **:math: `\sqrt{\mathrm{scaling\ factor}}`**. 
+    This should be reasonable:
     
-    1. `sqrt(background counts) / sqrt(scaling factor)` tells us the error of background spectrum, when it is estimated 
-    from a region as small as the source region. 
+    1. :math: `\sqrt{\mathrm{background\ counts}} / \sqrt{\mathrm{scaling
+      \ factor}}` tells us the error of background spectrum, 
+      when it is estimated from a region as small as the source region. 
     
-    2. However, we often estimate the background from a region much larger than the source region (determined by scaling 
-    factor): so we should have better understanding of the background spectrum, and therefore smaller uncertainties, as 
-    expected from `sqrt(Background counts) / scaling factor`.
+    2. However, we often estimate the background from a region much 
+      larger than the source region (determined by scaling 
+      factor): so we should have better understanding of the background 
+      spectrum, and therefore smaller uncertainties, as expected from 
+      :math: `\sqrt{\mathrm{background\ counts}} / \mathrm{scaling\ factor}`.
     
     """
     pi_lst = np.array(pi_lst)
@@ -192,6 +250,9 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     # For spectral counts
     pi_scal_lst = pi_lst * scal_lst[:,np.newaxis]
     sum_pi = np.sum(pi_scal_lst, axis=0)
+    # # We round photon counts in each channel to nearest integer, to approximate Poisson
+    # # which is necessary to calculate uncertainties
+    # sum_pi = np.round(np.sum(pi_scal_lst, axis=0)).astype(int)
     
     # For spectral counts uncertainties
     # Gaussian error propagation: each channel of `pi_scal_lst` has to have enough photon counts!
@@ -237,7 +298,7 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
         hdu_spectrum.header["HDUCLAS2"] = "TOTAL"
         hdu_spectrum.header["HDUCLAS3"] = "COUNT"
         
-        hdulist.writeto("%s"%(fits_name), overwrite=True)
+        hdulist.writeto(f"{fits_name}", overwrite=True)
         
     return sum_pi,sum_pierr
 
@@ -322,15 +383,22 @@ def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
         hdu_spectrum.header["HDUCLAS2"] = "BKG"
         hdu_spectrum.header["HDUCLAS3"] = "COUNT"
 
-        hdulist.writeto("%s"%(fits_name), overwrite=True)
+        hdulist.writeto(f"{fits_name}", overwrite=True)
     
     return bkgpi,bkgpi_err
 
 
 def get_bkgscal(src_file,bkg_file=None):
     """
-    Get scaling ratio for some background spectrum:
-        `scaling ratio = src_areascal / bkg_areascal * src_backscal / bkg_backscal * src_expo / bkg_expo`
+    Get background-to-source scaling ratio, which is calculated as:
+
+    .. math::
+        :label: eq:bkgscal
+
+        `scaling factor` = `AREASCAL`_src / `AREASCAL`_src * 
+        `BACKSCAL`_src / `BACKSCAL`_bkg * `EXPOSURE`_src 
+        / `EXPOSURE`_bkg
+    
         
     Parameters
     ----------
@@ -342,7 +410,26 @@ def get_bkgscal(src_file,bkg_file=None):
     Returns
     -------
     bkgscal : float
-        Background scaling ratio.
+        Background-to-source scaling ratio.
+
+    Notes
+    -----
+    Equation :eq:`bkgscal` applies to both point sources and extended 
+    sources.
+
+    For eROSITA, `EXPOSURE` is the total exposure time during which at 
+    least one pixel of the extraction aperture is in the FoV. Since the
+    FoV is scanning over the region during the exposure, `EXPOSURE` is 
+    not the real averaged exposure time per pixel in the region. The 
+    real averaged exposure time per pixel, after correcting for such 
+    "region-covering incompleteness" issue, is actually:
+
+    .. math::
+
+        T_\mathrm{ave} \equiv `BACKSCL`/`REGAREA` * `EXPOSURE`
+
+    where `REGAREA`/`BACKSCAL` is the region-covering-incompleteness-correcting
+    factor.
     """
     with fits.open(src_file) as hdu:
         head = hdu["SPECTRUM"].header
@@ -377,9 +464,32 @@ def get_expo(src_file):
     src_expo : float
         Source exposure time.
     """
-    with fits.open(src_file) as hdu:
-        src_expo = hdu["SPECTRUM"].header["EXPOSURE"]
+    src_expo = fits.getval(src_file,keyword="EXPOSURE",extname="SPECTRUM")
+    if src_expo == 0:
+        print(f"Please check {src_file}: why EXPOSURE == 0?")
     return src_expo
+
+
+def get_rega(src_file):
+    """
+    Get source geometric area, from the non-standard keyword `REGAREA`.
+    For non-eROSITA instrument, return 1.
+
+    Parameters
+    ----------
+    src_file : str
+        Source PI spectrum name.
+    
+    Returns
+    -------
+    src_rega : float
+        Source region area [deg^2].
+    """
+    try:
+        src_rega = fits.getval(src_file,keyword="REGAREA",extname="SPECTRUM")
+    except Exception as e:
+        src_rega = 1
+    return src_rega
 
 
 def make_bkggrpflg(bkgscal_lst,Ngrp=4):
