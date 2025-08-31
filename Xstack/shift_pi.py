@@ -418,7 +418,7 @@ def get_bkgscal(src_file,bkg_file=None):
         Source PI spectrum name.
     bkg_file : str, optional
         Background PI spectrum name. If not specified, will look for it 
-        from the header of src_file.
+        from the header of `src_file`.
     
     Returns
     -------
@@ -443,6 +443,12 @@ def get_bkgscal(src_file,bkg_file=None):
 
     where `REGAREA`/`BACKSCAL` is the region-covering-incompleteness-
     correcting factor.
+
+    Note that this is different from Eq. 10 of X. Zhang+2024: the bkg 
+    spectra should not only be scaled by `REGAREA`, but additionally by 
+    the averaged exposure per pixel, which effectively results in an 
+    exactly same scaling formula as for the point sources (`BACKSCAL` 
+    * `EXPOSURE` * `AREASCAL`).
     """
     with fits.open(src_file) as hdu:
         head = hdu["SPECTRUM"].header
@@ -525,7 +531,7 @@ def make_bkggrpflg(bkgscal_lst,Ngrp=4):
     -------
     bkggrpflg_lst : numpy.ndarray
         An array that indicates which group each background PI spectrum 
-        should be assigned to (length = len(bkgscal_lst)).
+        should be assigned to (length = len(`bkgscal_lst`)).
     bkgscal_ave_lst : numpy.ndrray
         The average bkg-to-source scaling ratio of each group 
         (length = `Ngrp`).

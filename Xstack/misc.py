@@ -29,19 +29,24 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
     src_name : str
         Input source PI file name.
     grp_name : str, optional
-        Output grouped PI file name. If not specified, will not create output file.
+        Output grouped PI file name. If not specified, will not create 
+        output file.
     method : str, optional
         Grouping method. Available methods:
-        - `EDGE`: Group by fixed energy bin edges. Edges provided by `eelo` and `eehi`.
-        - `MIN_NET`: Group by minimum net counts (src-bkg*bkgscal). Needs to specify the bkg_name and min_net in each group.
-    rmf_file : str
-        (for `EDGE` method) RMF file name. If not specified, the code will automatically search the header of `src_name`.
-    eelo : numpy.ndarray
+        - `EDGE`: Group by fixed energy bin edges. Edges provided by 
+          `eelo` and `eehi`.
+        - `MIN_NET`: Group by minimum net counts (src-bkg*bkgscal). 
+           Needs to specify the bkg_name and min_net in each group.
+    rmf_file : str, optional
+        (for `EDGE` method) RMF file name. If not specified, the code 
+        will automatically search the header of `src_name`.
+    eelo : numpy.ndarray, optional
         (for `EDGE` method) Lower edge of fixed energy bin.
-    eehi : numpy.ndarray
+    eehi : numpy.ndarray, optional
         (for `EDGE` method) Upper edge of fixed energy bin.
     bkg_name : str, optional
-        Background file name used in `MIN_NET` mode. Defaults to None. If not specified, will look for it in the header of src_name.
+        Background file name used in `MIN_NET` mode. Defaults to None. 
+        If not specified, will look for it in the header of `src_name`.
     min_net : float or int, optional
         Minimum net counts in each group in `MIN_NET` mode. Defaults to 0.
     
@@ -53,7 +58,7 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
     Available Methods
     -----------------
     * `EDGE`: Group by fixed energy bin edges.
-    * `MIN_NET` : Group by minimum net counts in each group.
+    * `MIN_NET`: Group by minimum net counts in each group.
     """
     if method == "EDGE":
         if (eelo is None) or (eehi is None):
@@ -234,7 +239,8 @@ def rebin_pi(ene_lo,ene_hi,coun,coun_err,grpflg):
 
 def rebin_arf(arfene_lo,arfene_hi,specresp,ene_lo,ene_hi,coun,grpflg,prob=None):
     """
-    Anchor the ARF specresp (input model energy) on the output channel energy grid.
+    Anchor the ARF specresp (input model energy) on the output channel 
+    energy grid.
 
     Parameters
     ----------
@@ -253,7 +259,18 @@ def rebin_arf(arfene_lo,arfene_hi,specresp,ene_lo,ene_hi,coun,grpflg,prob=None):
     grpflg : numpy.ndarray
         Channel energy grouping flag, should be passed from `rebin_pi`.
     prob : numpy.ndarray, optional
-        The RMF 2D probability matrix. If given, the ARF used for rebinning will be RMF-weighted. Defaults to None.
+        The RMF 2D probability matrix. If given, the ARF used for 
+        rebinning will be RMF-weighted. Defaults to None.
+
+    Returns
+    -------
+    grpene_lo : numpy.ndarray
+        Lower edge of grouped output channel energy bin.
+    grpene_hi : numpy.ndarray
+        Upper edge of grouped output channel energy bin.
+    grpspecresp : numpy.ndarray
+        Grouped effective area as a function of grouped output channel 
+        energy.
     """
     ene_ce = (ene_lo + ene_hi) / 2
     specresp_ali = align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob)
@@ -305,24 +322,28 @@ def rebin_arf(arfene_lo,arfene_hi,specresp,ene_lo,ene_hi,coun,grpflg,prob=None):
 
 def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_name=None,normalize_at=None,outname=None,plot=False,ax=None,**kwargs):
     """
-    Make data/arf plot.
+    Make data/arf plot to visualize the stacked spectral shape.
 
     Parameters
     ----------
     src_name : str
         Source spectrum file name.
     bkg_name : str, optional
-        Background spectrum file name. If not specified, will look for it in the header of src_name.
+        Background spectrum file name. If not specified, will look for 
+        it in the header of `src_name`.
     arf_name : str, optional
-        ARF file name. If not specified, will look for it in the header of src_name.
+        ARF file name. If not specified, will look for it in the header 
+        of `src_name`.
     rmf_name : str, optional
-        RMF file name. If not specified, will look for it in the header of src_name.
+        RMF file name. If not specified, will look for it in the header 
+        of `src_name`.
     grp_name : str, optional
         Grouping file name. Only uses its "GROUPING" column.
     normalize_at : int or float, optional
         Output spectrum normalized at some energy (keV). Defaults to None.
     outname : str, optional
-        Output file name. If not specified, will not create output file name.
+        Output file name. If not specified, will not create output file 
+        name.
     plot : bool, optional
         Whether or not to make a plot. Defaults to False.
     ax : matplotlib.axes.Axes, optional
@@ -336,9 +357,9 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
     grpene_hi : numpy.ndarray
         Upper bounds of grouped energy.
     ratio : numpy.ndarray
-        Data/arf ratio, in units of cts/s/cm^2/keV.
+        Data/arf ratio, in units of [ct/cm^2/s/keV].
     ratioerr : numpy.ndarray
-        Error of data/arf ratio.
+        Uncertainty in data/arf ratio.
 
     """
     with fits.open(src_name) as hdu:
@@ -408,8 +429,8 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
             factor_norm = ratio[normalize_idx]
         else:   # take average
             normalize_idxs = np.argsort(abs(grpene_ce-normalize_at))[:50]   # TODO: better number than 50?
-            ene_ce_norm = np.median(grpene_ce[normalize_idxs])
-            factor_norm = np.median(ratio[normalize_idxs])
+            ene_ce_norm = np.nanmedian(grpene_ce[normalize_idxs])
+            factor_norm = np.nanmedian(ratio[normalize_idxs])
         ratio = ratio / factor_norm
         ratioerr = ratioerr / factor_norm
 
@@ -442,7 +463,8 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
 #===================================================
 def fene_fits(srcid_lst,arffene_lst,fene_lst,fits_name):
     """
-    Creating a fits storing the first energy of each source"s PI spectrum and ARF specresp.
+    Creating a fits storing the first energy of each source"s PI spectrum 
+    and ARF specresp.
 
     Parameters
     ----------
@@ -457,7 +479,7 @@ def fene_fits(srcid_lst,arffene_lst,fene_lst,fits_name):
 
     Returns
     -------
-    None.
+    None
 
     """
     if fits_name is not None:
@@ -479,12 +501,21 @@ def fene_fits(srcid_lst,arffene_lst,fene_lst,fits_name):
 
 def valid_energy_range_plot(fene_name,src_name,grp_name,bkg_name,rmf_name,ax=None):
     """
-    Plot 1) fraction of sources contributing, and 2) fraction of net counts (total-background), as a function of rest-frame energy. These two would facilitate determining a valid energy range for stacked spectrum analysis. Neither the fraction of sources contributing, nor the fraction of net counts can be too low.
+    Plot:
+
+    1) fraction of sources contributing, and
+    2) fraction of net counts (total-background), 
+
+    as a function of rest-frame energy. These two would facilitate 
+    determining a valid energy range for stacked spectrum analysis. 
+    Neither the fraction of sources contributing, nor the fraction 
+    of net counts can be too low.
 
     Parameters
     ----------
     fene_name : str
-        The name of the fits file containing first contributing energy. Output of Xstack.
+        The name of the fits file containing first contributing energy. 
+        Output of Xstack.
     src_name : str
         The source spectrum file name.
     grp_name : str
@@ -494,7 +525,8 @@ def valid_energy_range_plot(fene_name,src_name,grp_name,bkg_name,rmf_name,ax=Non
     rmf_name : str
         The RMF file name.
     ax : matplotlib.axes.Axes, optional
-        The axes to make the plot. If not specified, will use the current axes. Defaults to None.
+        The axes to make the plot. If not specified, will use the current 
+        axes. Defaults to None.
 
     Returns
     -------
@@ -584,10 +616,13 @@ def valid_energy_range_plot(fene_name,src_name,grp_name,bkg_name,rmf_name,ax=Non
 #===================================================
 ################# UV correction ####################
 #===================================================
+# NOTE: this section should be used with caution!
 def dered(flux,RA,DEC,R=5.28):
     """
-    Perform Galactic extinction correction. SFDMAP generated from https://github.com/kbarbary/sfdmap.
-    To use this function, please make sure `SFD_DIR` has been written in ~/.bashrc as an environmental variable!
+    Perform Galactic extinction correction. SFDMAP generated from 
+    https://github.com/kbarbary/sfdmap.
+    To use this function, please make sure `SFD_DIR` has been written 
+    in ~/.bashrc as an environmental variable!
     See the above link for more details on `SFD_DIR`.
     
     Parameters
@@ -599,7 +634,8 @@ def dered(flux,RA,DEC,R=5.28):
     DEC : float
         Declination of the source.
     R : float, optional
-        Extinction coefficient of the band in use (see e.g., Schlafly&Finkbeiner2011, Fang+2023).
+        Extinction coefficient of the band in use (see e.g., 
+        Schlafly&Finkbeiner2011, Fang+2023).
 
     Returns
     -------
@@ -614,7 +650,8 @@ def dered(flux,RA,DEC,R=5.28):
 
 def kcorr(flux,z,alpha=0.65):
     """
-    K-correction involves spectral shift and distance correction. This function only does the spectral shifting.
+    K-correction involves spectral shift and distance correction. This 
+    function only does the spectral shifting.
     
     Parameters
     ----------
@@ -623,13 +660,16 @@ def kcorr(flux,z,alpha=0.65):
     z : float
         Redshift of the source.
     alpha : float, optional
-        Spectral slope (assuming F_nu ~ nu^{-alpha}, where F_nu in units of erg/cm^2/s/AA). Defaults to 0.65 (Natali+1998).
+        Spectral slope (assuming F_nu ~ nu^{-alpha}, where F_nu in units 
+        of [erg/cm^2/s/AA]). Defaults to 0.65 (Natali+1998).
     
     Returns
     -------
     flux_int : float
-        The expected flux (erg/cm^2/s/AA) recorded by some filter, if observed in rest-frame. 
-        Note that the distance effect (F_nu ~ L_nu / 4/pi/d_L^2) has to be considered separately.
+        The expected flux (erg/cm^2/s/AA) recorded by some filter, if 
+        observed in rest-frame. 
+        Note that the distance effect (F_nu ~ L_nu / 4/pi/d_L^2) has to 
+        be considered separately.
     """
     # UV SED: F_nu~nu^-alpha
     # Assume alpha=0.65 (Natali+1998)
@@ -639,8 +679,8 @@ def kcorr(flux,z,alpha=0.65):
 
 def flux_sft(flux,lambda_fr=2315.7,lambda_to=2500,alpha=0.65):
     """
-    Calculate the expected flux (erg/cm^2/s/Hz) at `lambda_to`, if we already know the flux at 
-    `lambda_fr`.
+    Calculate the expected flux (erg/cm^2/s/Hz) at `lambda_to` based on 
+    the flux at `lambda_fr`, and the assumed spectral slope `alpha`.
     
     Parameters
     ----------
@@ -650,7 +690,12 @@ def flux_sft(flux,lambda_fr=2315.7,lambda_to=2500,alpha=0.65):
     lambda_to : float
         lambda (to).
     alpha : float
-        Spectral slope (assuming F_nu ~ nu^{-alpha}, where F_nu in units of erg/cm^2/s/Hz).
+        Spectral slope (assuming F_nu ~ nu^{-alpha}, where F_nu in units of [erg/cm^2/s/Hz]).
+
+    Returns
+    -------
+    flux_sft : float
+
     """
     # UV SED: F_nu~nu^-alpha
     # Assume alpha=0.65 (Natali+1998)
@@ -765,33 +810,46 @@ def get_nh(RA,DEC):
 #===================================================
 ############### RMF Visualization ##################
 #===================================================
-def view_rmf(rmf_file,n_grid_i=1000,n_grid=1000,fig=None,ax=None,fig_name=None,cmap="gray_r",log_scale=False,v_min_lbound=1e-6,x_label="Output photon energy (keV)",y_label="Input model energy (keV)"):
+def view_rmf(
+    rmf_file,n_grid_i=1000,n_grid=1000,
+    fig=None,ax=None,fig_name=None,cmap="gray_r",log_scale=False,v_min_lbound=1e-6,
+    x_label="Output photon energy (keV)",y_label="Input model energy (keV)",
+    ):
     """
-    A convenient tool for visualizing 2D RMF matrix. 2D interpolation assumed. 
-    You can either call it inside your code to visualize RMF alone side other plots you would like to plot; 
-    or you can use this function to produce standalone PNG. 
+    A convenient tool for visualizing 2D RMF matrix. 2D interpolation 
+    assumed. You can either call it inside your code to visualize RMF 
+    alone side other plots you would like to plot; or you can use this 
+    function to produce standalone PNG. 
     
     Parameters
     ----------
     rmf_file : str
         Name of the RMF file.
     n_grid_i : int, optional
-        Number of grids for the input model energy (does not have to be the same as the length of `ENERG_LO` or `ENERG_HI`). Defaults to 1000.
+        Number of grids for the input model energy (does not have to be 
+        the same as the length of `ENERG_LO` or `ENERG_HI`). Defaults to 
+        1000.
     n_grid : int, optional
-        Number of grids for the output photon energy (does not have to be the same as the length of `E_MIN` or `E_MAX`). Defaults to 1000.
+        Number of grids for the output photon energy (does not have to be 
+        the same as the length of `E_MIN` or `E_MAX`). Defaults to 1000.
+    fig : matplotlib.figure.Figure, optional
+        The current figure.
+    ax : matplotlib.axes.Axes, optional
+        The current axes.
     fig_name : str, optional
         Output figure name. If specified, will create an image.
     cmap : str, optional
-        cmap. Defaults to `gray_r`.
+        cmap. Defaults to "gray_r".
     log_scale : bool, optional
         If True, use log-scale for cmap.
     v_min_lbound : float, optional
-        The lower bound of v_min for log-cmap. This means that ``LogNorm(vmin=np.max(np.min(prob_new),v_min_lbound),vmax=np.max(prob_new))"".
-        Defaults to 1e-6.
+        The lower bound of v_min for log-cmap. This means that 
+        `LogNorm(vmin=np.max(np.min(prob_new),v_min_lbound),
+        vmax=np.max(prob_new))`. Defaults to 1e-6.
     x_label : str, optional
-        X label. Defaults to ``Output photon energy (keV)"".
+        X label. Defaults to "Output photon energy (keV)".
     y_label : str, optional
-        Y label. Defaults to ``Input model energy (keV)"".
+        Y label. Defaults to "Input model energy (keV)".
 
     Returns
     -------
@@ -918,11 +976,14 @@ def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
     rmffile2 : str
         Name of rmf with higher energy.
     Es : float
-        Starting energy of the output rmf. Cannot be larger than minimum energy of rmffile1.
+        Starting energy of the output rmf. Cannot be larger than minimum 
+        energy of `rmffile1`.
     Ee : float
-        Ending energy of the output rmf. Cannot be smaller than maximum energy of rmffile2.
+        Ending energy of the output rmf. Cannot be smaller than maximum 
+        energy of `rmffile2`.
     Ngrid : int
-        Number of grids between Es and rmffile1 (also between rmffile1 and rmffile2, between rmffile2 and Ee).
+        Number of grids between `Es` and `rmffile1` (also between 
+        `rmffile1` and `rmffile2`, between `rmffile2` and `Ee`).
     out_name : str
         Output rmf name.
 
@@ -1097,11 +1158,14 @@ def concat_arf(arffile1,arffile2,Es,Ee,Ngrid,out_name):
     arffile2 : str
         Name of arf with higher energy.
     Es : float
-        Starting energy of the output arf. Cannot be larger than minimum energy of arffile1.
+        Starting energy of the output arf. Cannot be larger than minimum 
+        energy of `arffile1`.
     Ee : float
-        Ending energy of the output arf. Cannot be smaller than maximum energy of arffile2.
+        Ending energy of the output arf. Cannot be smaller than maximum 
+        energy of `arffile2`.
     Ngrid : int
-        Number of grids between Es and arffile1 (also between arffile1 and arffile2, between arffile2 and Ee).
+        Number of grids between `Es` and `arffile1` (also between 
+        `arffile1` and `arffile2`, between `arffile2` and `Ee`).
     out_name : str
         Output ARF name.
 
@@ -1170,8 +1234,9 @@ def concat_arf(arffile1,arffile2,Es,Ee,Ngrid,out_name):
 
 def align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob=None):
     """
-    The ARF energy bin and RMF energy bin (also the PI channel energy bin) does not always match. Align the ARF
-    to get the effective area at each RMF energy bin.
+    The ARF energy bin and RMF energy bin (also the PI channel energy 
+    bin) does not always match. Align the ARF to get the effective area 
+    at each RMF energy bin.
 
     Parameters
     ----------
@@ -1185,8 +1250,8 @@ def align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob=None):
         Upper edge of input model energy (ARF energy) bin.
     specresp : numpy.ndarray
         The ARF specresp (cm^2 vs. arf energy).
-    prob : numpy.ndarray
-        RMF 2D matrix (prob.shape=(len(arfene_lo),len(ene_lo))).
+    prob : numpy.ndarray, optional
+        RMF 2D matrix (prob.shape=(len(`arfene_lo`),len(`ene_lo`))).
 
     Returns
     -------
@@ -1234,7 +1299,8 @@ def align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob=None):
 #===================================================
 def align_model(oarfene_lo,oarfene_hi,omodel,narfene_lo,narfene_hi):
     """
-    Original model (defined on oarfene grid) --> New model (defined on narfene grid).
+    Original model (defined on `oarfene` grid) --> New model (defined on 
+    `narfene` grid).
 
     Parameters
     ----------
@@ -1320,14 +1386,19 @@ def align_model(oarfene_lo,oarfene_hi,omodel,narfene_lo,narfene_hi):
 
 def fold_model(modelfile,rmffile,arffile,out_name):
     """
-    Fold the input models (erg/cm^2/s/keV, input model energy) through response (ARF+RMF) files (cts/s/keV, output channel energy).
-    Different extensions store different models (models should be defined in `modelfile`).
-    Different columns store `E_MIN`, `E_MAX`, and flux of different components in a model.
+    Fold the input models ([erg/cm^2/s/keV], input model energy) through 
+    response (ARF+RMF) files ([ct/s/keV], output channel energy).
+    
+    Different extensions store different models (models should be defined 
+    in `modelfile`). Different columns store `E_MIN`, `E_MAX`, and flux 
+    of different components in a model.
     
     Parameters
     ----------
     modelfile : str
-        Name of file storing input models to be folded. Different extensions store different models. Different columns store different components. 
+        Name of file storing input models to be folded. Different 
+        extensions store different models. Different columns store 
+        different components. 
     rmffile : str
         Name of RMF file.
     arffile : str
