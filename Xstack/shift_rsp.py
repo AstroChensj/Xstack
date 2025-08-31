@@ -678,7 +678,7 @@ def compute_rspwt(
         # (they go into neither weight calculation nor spectral fitting)
         # and are thus chosen arbitrarily
         expo_stacked = np.sum(expo_lst)
-        rega_stacked = 1
+        rega_stacked = 1.0
 
     elif method == "FLX":   # FLUX
         # For extended sources, flux in units of [erg/cm^2/s/deg^2]
@@ -688,19 +688,19 @@ def compute_rspwt(
             # as the stacked EXPOSURE, and 1 deg^2 as the stacked
             # REGAREA, following X. Zhang+2024
             expo_stacked = np.sum(expo_rega_lst) / np.sum(rega_lst)
-            rega_stacked = 1
+            rega_stacked = 1.0
             rspwt_lst = expo_rega_lst / expo_stacked / rega_stacked
             # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1
+            rspnorm = 1.0
         # For point sources, flux in units of [erg/cm^2/s]
         else:
             # We take the summed exposure as the stacked EXPOSURE,
             expo_stacked = np.sum(expo_lst)
             rspwt_lst = expo_lst / expo_stacked
             # REGAREA not involved at all, and thus chosen arbitrarily
-            rega_stacked = 1
+            rega_stacked = 1.0
             # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1
+            rspnorm = 1.0
 
     elif method == "LMN":   # LUMINOSITY
         # luminosity distances in units of [Mpc]
@@ -710,17 +710,17 @@ def compute_rspwt(
             expo_rega_lmn_lst = expo_lst * rega_lst / (4*np.pi*dist_lst**2)
             # the averaged exposure following X. Zhang+2024
             expo_stacked = np.sum(expo_rega_lst) / np.sum(rega_lst)
-            rega_stacked = 1
+            rega_stacked = 1.0
             rspwt_lst = expo_rega_lmn_lst / expo_stacked / rega_stacked
             # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1     # arbitrary number
+            rspnorm = 1.0       # arbitrary number
         else:
             expo_stacked = np.sum(expo_lst)
             rspwt_lst = expo_lst / (4*np.pi*dist_lst**2) / expo_stacked
             # REGAREA not involved at all, and thus chosen arbitrarily
-            rega_stacked = 1
+            rega_stacked = 1.0
             # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1     # arbitrary number
+            rspnorm = 1.0       # arbitrary number
 
     else:
         raise Exception("Available method for ARF scaling ratio calculation: `FLX`, `LMN`, or `SHP` !")

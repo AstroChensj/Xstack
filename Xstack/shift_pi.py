@@ -122,31 +122,36 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     The weighted sum of many PI files. The weights are specified by 
     `scal_lst`. 
     
-    If source PIs are to be summed, the weights should all be unity.
-    Otherwise if background PIs are to be summed, the weights should 
-    be (as a return from function `get_bkgscal`):
+    This function can be used to stack the source PIs and estimate 
+    associate uncertainties. In this case, the weights should all be 
+    unity. The uncertainty in each channel is calculated with Gaussian 
+    error propogation.
+    
+    It can also stack the background PIs, where the weights should be 
+    the bkg-to-source ratio (as a return from function `get_bkgscal`):
 
     ..
 
         `AREASCAL`_src / `AREASCAL`_src * `BACKSCAL`_src / 
         `BACKSCAL`_bkg * `EXPOSURE`_src / `EXPOSURE`_bkg
     
+    The uncertainty in bkg PIs, on the other hand, should be calculated 
+    with function `add_bkgpi`, using the grouping method (see docstring
+    there). 
     
-    The uncertainty in each channel is calculated with Gaussian error 
-    propogation.
-    
-    Caution should be taken when adding background spectra with varing 
-    scaling ratios:
+    The reason why source and background spectra should be treated 
+    differently, is because `scal_lst` remains constant for the source 
+    spectra, while it varies across the bkg spectra:
 
-    1. If all backgrounds have same scaling ratio, we can simply add them 
-       together. 
-    2. However if the scaling ratio for each spectrum varies, we need to 
-       scale them first before summing together. Since the scaling ratio 
-       for background spectrum is often a number much smaller than 1, 
-       each scaled background spectrum may have float number of photon 
-       counts < 1 in some channel i. In this case, the uncertainty in 
-       channel i cannot be calculated with Poisson statistics 
-       (i.e. :math: `\sqrt{N}` ). 
+    1. If all backgrounds have same bkg-to-source ratio, we can simply 
+       add them together.
+    2. However if the bkg-to-source scaling ratio for each spectrum 
+       varies, we need to scale them first before summing together. 
+       Since the scaling ratio for background spectrum is often a number 
+       much smaller than 1, each scaled background spectrum may have 
+       float number of photon counts < 1 in some channel i. In this case, 
+       the uncertainty in channel i cannot be calculated with Poisson 
+       statistics (i.e. :math: `\sqrt{N}` ). 
     3. To conclude, `add_bkgpi` should be used when considering error of 
        stacked background spectra with varied scaling ratio. `add_bkgpi` 
        first group background spectra with similar scaling ratios, then 
@@ -311,7 +316,7 @@ def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
     `bkgscal_lst`.
     
     Group sources into bins of similar bkg-to-source scaling ratio 
-    (considering both `BACKSCAL` and `EXPOSURE`) For each group, sum the 
+    (considering both `BACKSCAL` and `EXPOSURE`). For each group, sum the 
     background counts, and compute the uncertainty with Poisson 
     statistics. Then sum the groups, scaling with the averaged scaling 
     ratio, and use Gaussian error propagation.
@@ -343,7 +348,7 @@ def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
     bkgscal_lst = np.array(bkgscal_lst)
     assert bkgpi_lst.shape[0] == bkgscal_lst.shape[0], "number of bkgpis and number of scaling ratios do not match!"
     
-    # Stacked bkg spectral counts calculated as stacked src spectral counts
+    # Stacked bkg spectral counts calculated in the same way as stacked src spectral counts
     bkgpi, bkgpi_err_UNUSED = add_pi(bkgpi_lst,bkgscal_lst)
     
     # Stacked bkg spectral counts uncertainties estimation: grouping method

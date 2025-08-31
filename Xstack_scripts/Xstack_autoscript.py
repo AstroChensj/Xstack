@@ -1,37 +1,69 @@
 #!/usr/bin/env python3
-"""A comprehensive standalone pipeline code for X-ray spectral (rest-frame) shifting and stacking.
+"""
+A standalone pipeline code for X-ray spectral shifting and stacking.
 
-X-ray spectral stacking is non-trivial compared to optical spectral stacking. The difficulties arise from two facts: 
-1) X-ray has much fewer photon counts (Poisson), meaning that spectral counts and uncertainties cannot be scaled simultaneously (as compared to optical); 
-2) X-ray has non-diagonal, complex response, meaning that the response needs to be taken into account when stacking.
+X-ray spectral stacking is non-trivial compared to optical spectral 
+stacking. The difficulties arise from two facts: 
 
-To tackle these issues, we develop Xstack: a standalone pipeline code for X-ray spectral stacking. The methodology is to first sum all (rest-frame) PI spectra, without any scaling; and then sum the response files (ARFs and RMFs), each with appropriate weighting factors to preserve the overall spectral shape.
+1) X-ray has much fewer photon counts (Poisson), meaning that spectral 
+   counts and uncertainties cannot be scaled simultaneously (as compared 
+   to optical); 
+2) X-ray has non-diagonal, complex response, meaning that the response 
+   needs to be taken into account when stacking.
+
+To tackle these issues, we develop Xstack: a standalone pipeline code 
+for X-ray spectral stacking. The methodology is to first sum all (rest-
+frame) PI spectra, without any scaling; and then sum the response files 
+(full response, ARFs*RMFs), with appropriate weighting factors to 
+preserve the overall spectral shape. 
 
 The key features of Xstack are: 
-1) properly account account for individual spectral contribution to the final stack, by assigning data-driven ARF weighting factors; 
+1) properly account account for individual spectral contribution to the 
+   final stack, by assigning data-driven weighting factors for the 
+   responses; 
 2) preserve Poisson statistics; 
 3) support Galactic absorption correction.
 
 
 Examples
 --------
-Calling Xstack is simple. For this command line version, it is only a single-line task:
+Calling Xstack is simple. For this command line version, it is only a 
+single-line task:
 
-```shell
-runXstack your_filelist.txt --prefix ./results/stacked_
-```
+.. code-block::
 
-And you will get the stacked PI spectrum `./results/stacked_pi.fits`, stacked background PI spectrum `./results/stacked_bkgpi.fits`, stacked response files `./results/stacked_arf.fits`, `./results/stacked_rmf.fits`, and `./results/stacked_fene.fits` which stores the first contributing energy of each individual source. Or more sophisticatedly:
+    runXstack your_filelist.txt --prefix ./results/stacked_
 
-```shell
-runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf
-```
+
+And you will get: 
+- stacked PI spectrum `./results/stacked_pi.fits`
+- stacked background PI spectrum `./results/stacked_bkgpi.fits`
+- stacked response files
+    + `./results/stacked_arf.fits`
+    + `./results/stacked_rmf.fits`
+- and `./results/stacked_fene.fits`, which stores the first contributing 
+  energy of each individual source. 
+
+Or more sophisticatedly:
+
+.. code-block::
+
+    runXstack your_filelist.txt --prefix ./results/stacked_ \
+    --rsp_weight_method SHP --rsp_proj_gamma 2.0 \
+    --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
+    --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf
+
 
 If you want to do bootstrap, that is also easy:
 
-```shell
-runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf --resample_method bootstrap --num_bootstrap 100
-```
+.. code-block::
+
+    runXstack your_filelist.txt --prefix ./results/stacked_ \
+    --rsp_weight_method SHP --rsp_project_gamma 2.0 \
+    --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
+    --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf \
+    --resample_method bootstrap --num_bootstrap 100
+
 
 Please see below for the documentation of each argument:
 

@@ -31,24 +31,28 @@ from .Xstack import XstackRunner
 ##############################################
 class resample_XstackRunner:
     """
-    A batch of `XstackRunner` objects. Used for producing bootstrap (or K-Fold) stacked spectra.
+    A batch of `XstackRunner` objects. Used for producing bootstrap 
+    (or K-Fold) stacked spectra.
 
-    Example usage
-    -------------
-    ```python
-    data = resample_XstackRunner(
-        pifile_lst = your_pifile_lst,
-        arffile_lst = your_arffile_lst,
-        rmffile_lst = your_rmffile_lst,
-        z_lst = your_z_lst,
-        bkgpifile_lst = your_bkgpifile_lst,
-        resample_method = 'bootstrap',
-        num_bootstrap = 100,
-        prefix = './results/stacked_',
-        # and other arguments if you like
-    )
-    data.run()  # this will produce a batch of bootstrap stacked PIs, bkgPIs, ARFs, RMFs under `bootstrap` directory
-    ```
+    Examples
+    --------
+    .. code-block::
+
+        data = resample_XstackRunner(
+            pifile_lst = your_pifile_lst,
+            arffile_lst = your_arffile_lst,
+            rmffile_lst = your_rmffile_lst,
+            z_lst = your_z_lst,
+            bkgpifile_lst = your_bkgpifile_lst,
+            resample_method = 'bootstrap',
+            num_bootstrap = 100,
+            prefix = './results/stacked_',
+            # and other arguments if you like
+        )
+        data.run()  
+        # this will produce a batch of bootstrap stacked PIs, bkgPIs, 
+        # ARFs, RMFs under `bootstrap` directory
+    
     """
     def __init__(
             self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,resample_method="bootstrap",num_bootstrap=10,bootstrap_portion=1.0,K=4,Ksort_lst=None,prefix="./results/stacked_",
@@ -67,32 +71,50 @@ class resample_XstackRunner:
         bkgpifile_lst : list or numpy.ndarray, optional
             The input background PI spectrum list. Defaults to None.
         nh_lst : list or numpy.ndarray, optional
-            The Galactic absorption column density list (in units of 1 cm^{-2}). Defaults to None.
+            The Galactic absorption column density list in units of 
+            [1 cm^-2]. Defaults to None.
         srcid_lst : list or numpy.ndarray, optional
             The source ID list. Defaults to None.
         rspwt_method : str, optional
-            Method for calculating ARFSCAL. Defaults to `SHP`. Available methods are:
-            - `SHP`: assuming all sources have same spectral shape, recommended
-            - `FLX`: assuming all sources have same flux (erg/s/cm^2)
-            - `LMN`: assuming all sources have same luminosity (erg/s)
+            Method for calculating ARFSCAL. Defaults to `SHP`. Available 
+            methods are:
+            - `SHP`: assuming all sources have same spectral shape, 
+              recommended
+            - `FLX`: assuming all sources have same spectral shape and 
+              flux ([erg/cm^2/s] for point sources while 
+              [erg/cm^2/s/deg^2] for extended sources)
+            - `LMN`: assuming all sources have same spectral shape and 
+              luminosity ([erg/s] for point sources while [erg/s/deg^2] 
+              for extended sources)
         rspproj_gamma : float, optional
-            The prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).
+            The prior photon index value for projecting RSP matrix onto 
+            the output energy channel. This is used in the `SHP` method, 
+            to calculate the weight of each response. Defaults to 2.0 
+            (typical for AGN).
         int_rng : tuple of (float,float), optional
-            The energy (keV) range for computing flux. Defaults to (1.0,2.3).
+            The energy (keV) range for computing flux. Defaults to 
+            (1.0,2.3).
         sample_rmf : str, optional
             Name of sample RMF. Defaults to None.
         sample_arf : str, optional
             Name of sample ARF. Defaults to None.
         nh_file : str, optional
-            Galactic absorption profile (absorption factor vs. energy) at 1e20 cm^{-2}. If specified, galactic absorption correction will be applied on the ARF before shifting.
-            - Should be in txt format. 
-            - Should also contain the following columns in the first extension: `nhene_ce`, `nhene_wd`, `factor`.
+            Galactic absorption profile (absorption factor vs. energy) 
+            at 1e20 cm^{-2}. If specified, galactic absorption correction 
+            will be applied on the ARF before shifting.
+            - Should be in .txt format. 
+            - Should also contain the following columns in the first 
+              extension: `nhene_ce`, `nhene_wd`, `factor`.
             - `factor` should indicate the absorption factor when nh=1e20.
-            - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
+            - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` 
+              with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
         Nbkggrp : int, optional
-            Number of groups with similar background-to-source scaling ratio. Defaults to 10.
+            Number of groups with similar background-to-source scaling 
+            ratio. Defaults to 10.
         ene_trc : float, optional
-            Truncate energy below which manually set ARF and PI counts to zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. Defaults to None.
+            Truncate energy below which manually set ARF and PI counts to 
+            zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. 
+            Defaults to None.
         extended : bool, optional
             Whether or not are the sources to be stacked extended sources. 
             The calculation of response weights would be affected. 
@@ -100,19 +122,28 @@ class resample_XstackRunner:
         nthreads : int, optional
             Number of CPUs used in shifting RSP.
         resample_method : str, optional
-            Resampling method. Defaults to `bootstrap`. Available methods are:
-            - `bootstrap`: Resample a certain portion (default 1.0; modified by `bootstrap_portion`) of original sample with replacement, for `num_bootstrap` times.
-            - `KFold`: First sort the sample according to some values (specified by `Ksort_lst`), then leave out 1/K fraction from start to end for K iterations.
+            Resampling method. Defaults to `bootstrap`. Available 
+            methods are:
+            - `bootstrap`: Resample a certain portion (default 1.0; 
+              modified by `bootstrap_portion`) of original sample with 
+              replacement, for `num_bootstrap` times.
+            - `KFold`: First sort the sample according to some values 
+              (specified by `Ksort_lst`), then leave out 1/K fraction 
+              from start to end for K iterations.
         num_bootstrap : int, optional
             Number of bootstrap experiments. Defaults to 10.
         bootstrap_portion : float, optional
-            Portion of original sample in each bootstrap experiment. Defaults to 1.0.
+            Portion of original sample in each bootstrap experiment. 
+            Defaults to 1.0.
         K : int, optional
-            Number of subgroups to divide the original sample into in `KFold` method. Defaults to 4.
+            Number of subgroups to divide the original sample into in 
+            `KFold` method. Defaults to 4.
         Ksort_lst : list or numpy.ndarray, optional
-            The value list (same length as the original sample) used to sort the original sample in `KFold` method.
+            The value list (same length as the original sample) used to 
+            sort the original sample in `KFold` method.
         prefix : str, optional
-            Prefix for all output stacked PI, BKGPI, ARF, RMF, FENE files. Defaults to './results/stacked_'.
+            Prefix for output stacked PI, BKGPI, ARF, and RMF files. 
+            Defaults to './results/stacked_'
         """
         self.pifile_lst = np.array(pifile_lst)
         self.arffile_lst = np.array(arffile_lst)

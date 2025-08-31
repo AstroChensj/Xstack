@@ -6,7 +6,7 @@
 
 <u><span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is a comprehensive standalone pipeline code for **X-ray spectral (rest-frame) shifting and stacking**.</u>
 
-In the era of eROSITA All Sky X-ray Survey (eRASS), the code should be very useful, if you have a special sample (of point sources) selected in other bands (*infra-red color, optical line/line ratios, variability*, etc), and you would like to see how their **averaged X-ray spectral shape** looks like. You simply download your targets' spectra from [eROSITA archive](https://erosita.mpe.mpg.de/dr1/erodat/data/download/), and <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> them (see [below](#ledger-how-to-use-xstack) for examples). 
+In the era of eROSITA All Sky X-ray Survey (eRASS), the code should be very useful, if you have a special sample (point or extended sources) selected in other bands (*infra-red color, optical line/line ratios, variability*, etc), and you would like to see how their **averaged X-ray spectral shape** looks like. You simply download your targets' spectra from [eROSITA archive](https://erosita.mpe.mpg.de/dr1/erodat/data/download/), and <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> them (see [below](#ledger-how-to-use-xstack) for examples). 
 
 ## :bulb: How <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> works: a very brief introduction
 
@@ -56,6 +56,18 @@ Stacking X-ray spectra with <span style="font-family: 'Courier New', Courier, mo
 In either case, <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> requires the following as input:
 
 - individual source `PI` spectra, with proper headers following OGIP standards; additional redshift file (with `.z` extension) and Galactic nH file (with `.nh` extension) under the same directory as each source `PI` spectrum;
+
+  + An example of `.nh` file:
+
+    ```
+    119000000000000000000.000000
+    ```
+
+  + An example of `.z` file:
+
+    ```
+    0.1
+    ```
   
 - background `PI` spectra (with proper `BACKSCAL` parameters);
   
@@ -83,7 +95,6 @@ The output will be:
   runXstack your_filelist.txt --prefix ./results/stacked_
   ```
   
-  
   - And you will get the stacked spectra `./results/stacked_pi.fits`, `./results/stacked_bkgpi.fits`, and stacked response files `./results/stacked_arf.fits`, `./results/stacked_rmf.fits`, and `./results/stacked_fene.fits` which stores the first contributing energy of each individual source. 
   
   - `runXstack` is the alias for `python3 /path/to/your/Xstack/Xstack_scripts/Xstack_autoscript.py`, which should be set automatically after `python -m pip install .`.
@@ -98,26 +109,28 @@ The output will be:
     ```
     Note that under each directory, it is assumed there exist a redshift file and Galactic nH file, with naming convention like `/path/to/your/PI_001.fits.z` and `/path/to/your/PI_001.fits.nh`. The redshift value and Galactic nH value ([1 cm^-2]) are stored in these two files, separately.
   
-  - `1.0` and `2.3`  are lower/upper end of the energy range (in keV) for computing flux. The flux represents the contribution from each source’s PI spectrum to the total stacked spectrum, and will be used as the weighting factors when stacking ARFs/RMFs.
+  - `1.0` and `2.3`  are lower/upper end of the energy range [keV] for computing flux. The flux represents the contribution from each source’s PI spectrum to the total stacked spectrum, and will be used as the weighting factors when stacking ARFs/RMFs.
   
   - `SHP` is the response weighting method, assuming all sources to be stacked have the same spectral shape (the minimum assumption). Under this method, the response weighting factor is calculated from flux (in a data-driven way). 
   
 - Or more sophisticatedly, specify more parameters:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf
   ```
 
   -  `nthreads` specifies the number of CPUs used for shifting RMF.
 
   - `ene_trc` specifies the energy (keV) below which the ARF is unreliable and should manually be truncated. For example, for eROSITA there may be some calibration issues below 0.2 keV, so you can set this parameter to `0.2`.
 
+  - set `--extended` if you are stacking extended sources (methods following [X. Zhang+2024](https://ui.adsabs.harvard.edu/abs/2024A%26A...691A.234Z/abstract))
+
   - `same_rmf` : the RMF files are usually large, and sometimes all sources to be stacked could share the same RMF in order to save space. Under this case, you can specify the file name of the common RMF with `same_rmf`.
 
 - If you want to do bootstrap, that is also easy:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf --resample_method bootstrap --num_bootstrap 100
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --resample_method bootstrap --num_bootstrap 100
   ```
 
 - You can run `runXstack -h` to get the documentation of all the above parameters. Or equivalently check below:
@@ -130,11 +143,12 @@ The output will be:
   |`--rsp_project_gamma`|prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).|2.0|
   |`--flux_energy_lo`|lower end of the energy range in keV for computing flux|1.0|
   |`--flux_energy_hi`|upper end of the energy range in keV for computing flux|2.3|
-  |`--nthreads`|number of cpus used for non-parametric RMF shifting|10|
+  |`--nthreads`|number of cpus used for non-parametric response shifting|10|
   |`--num_bkg_groups`|number of background groups|10|
   |`--ene_trc`|energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)|0.0|
+  |`--extended`|whether or not this is an extended source|`False` (point source)|
   |`--same_rmf`|specify the name of common rmf, if all sources are to use the same rmf|None|
-  |`--resample_method`|method for performing resampling; `None`: no resampling, `bootstrap`: use bootstrap, `KFold`: use KFold)|None|
+  |`--resample_method`|method for performing resampling; `None`: no resampling, `bootstrap`: use bootstrap, `KFold`: use KFold|None|
   |`--num_bootstrap`|number of bootstrap experiments in `bootstrap` mode|10|
   |`--bootstrap_portion`|portion of sources to resample in each bootstrap experiment|1.0|
   |`--Ksort_filelist`|name of file storing the sorting value for each source in `filelist`, under `KFold` mode|`Ksort_filelist.txt`|
@@ -169,7 +183,8 @@ The output will be:
       nh_file=default_nh_file,                        # the Galactic absorption profile (absorption factor vs. energy)
       Nbkggrp=10,                                     # the number of background groups to calculate uncertainty of background
       ene_trc=0.2,                                    # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
-      nthreads=50,                                    # number of cpus used for RMF shifting
+      extended=False,                                 # whether or not this is an extended source
+      nthreads=50,                                    # number of cpus used for response shifting
       prefix="./results/stacked_",                    # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
   ).run()
   ```
@@ -203,6 +218,7 @@ The output will be:
       nh_file=default_nh_file,                        # the Galactic absorption profile (absorption factor vs. energy)
       Nbkggrp=10,                                     # the number of background groups to calculate uncertainty of background
       ene_trc=0.2,                                    # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
+      extended=False,                                 # whether or not this is an extended source
       nthreads=50,                                    # number of cpus used for RMF shifting
       resample_method="bootstrap",              		  # resample method: `bootstrap` or `KFold`
       num_bootstrap=20,							                  # number of bootstrap experiments in `bootstrap` method
@@ -229,7 +245,7 @@ Please take a look at the `Step 3` of primary example in [`./demo/demo.ipynb`](h
 
 ## :warning: Limitations so far ... and contributions are welcome!
 
-<span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is a great tool for stacking large number of point source (AGN) spectra, especially when focusing on average spectral shapes. While we acknowledge a few limitations, they are beyond current scope and won't affect the core functionality of the code. That said, contributions are still welcome!
+<span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is a great tool for stacking large number of low-counts X-ray spectra, especially when focusing on average spectral shapes. While we acknowledge a few limitations, they are beyond current scope and won't affect the core functionality of the code. That said, contributions are still welcome!
 
 - **Preserving only spectral **shape**; **normalization** information is lost**
   - Each spectrum carries both **normalization** and **shape** information. For **X-ray** spectral stacking, it is in principle not possible to preserve both simultaneously, due to the complex response. <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is designed to preserve the **shape** (by assigning optimized response weighting factors), which necessarily results in the loss of **absolute normalization**. One possible improvement could be to stack the shape (with <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span>) and normalization (with e.g., 1.0-2.3 keV image stacking) separately, and then rescale the shape spectrum using the average luminosity/flux computed independently.

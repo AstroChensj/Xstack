@@ -36,17 +36,19 @@ class XstackRunner:
 
     Example usage
     -------------
-    ```python
-    data = XstackRunner(
-        pifile_lst = your_pifile_lst,
-        arffile_lst = your_arffile_lst,
-        rmffile_lst = your_rmffile_lst,
-        z_lst = your_z_lst,
-        bkgpifile_lst = your_bkgpifile_lst,
-        prefix = './results/stacked_',
-    )
-    data.run()  # this will produce the stacked PI, bkgPI, ARF, RMF in one go
-    ```
+    .. code-block::
+
+        data = XstackRunner(
+            pifile_lst = your_pifile_lst,
+            arffile_lst = your_arffile_lst,
+            rmffile_lst = your_rmffile_lst,
+            z_lst = your_z_lst,
+            bkgpifile_lst = your_bkgpifile_lst,
+            prefix = './results/stacked_',
+        )
+        data.run()  
+        # this will produce the stacked PI, bkgPI, ARF, RMF in one go
+
     """
     def __init__(
             self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,prefix="./results/stacked_",
@@ -65,8 +67,8 @@ class XstackRunner:
         bkgpifile_lst : list or numpy.ndarray, optional
             The input background PI spectrum list. Defaults to None.
         nh_lst : list or numpy.ndarray, optional
-            The Galactic absorption column density list (in units of 
-            1 cm^{-2}). Defaults to None.
+            The Galactic absorption column density list in units of 
+            [1 cm^-2]. Defaults to None.
         srcid_lst : list or numpy.ndarray, optional
             The source ID list. Defaults to None.
         rspwt_method : str, optional
