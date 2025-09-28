@@ -360,6 +360,8 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
         Data/arf ratio, in units of [ct/cm^2/s/keV].
     ratioerr : numpy.ndarray
         Uncertainty in data/arf ratio.
+    ax : matplotlib.axes.Axes
+        The axes for the plot. None if not specified.
 
     """
     with fits.open(src_name) as hdu:
@@ -450,12 +452,14 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
 
         hdu_lst.writeto(outname,overwrite=True)
 
+    # plot energy*energy*data
+    # therefore additional normalization (ene_ce_norm**2) is needed to ensure value at ene_ce_norm is 1
     if plot:
         if ax is None:
             ax = plt.gca()
         ax.errorbar(grpene_ce,ratio*grpene_ce**2/ene_ce_norm**2,yerr=(ratioerr*grpene_ce**2/ene_ce_norm**2/2),**kwargs)
 
-    return ax
+    return grpene_lo,grpene_hi,ratio,ratioerr,ax
 
 
 #===================================================
