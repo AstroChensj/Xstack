@@ -22,13 +22,13 @@ To tackle these issues, we develop **<span style="font-family: 'Courier New', Co
 
 ### Key features of <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span>
 
-:star_struck: properly preserve X-ray spectral shape, by assigning data-driven response weighting factors; 
+:star_struck: properly preserve X-ray spectral shape, by assigning optimal (data-driven) response weighting factors; 
 
 :star_struck: preserve Poisson statistics; 
 
 :star_struck: support Galactic absorption correction, if an additional ***nH*** value (in units of 1 $\text{cm}^{-2}$) for each spectrum is given.
 
-You can find in [our paper](https://arxiv.org/abs/2506.17150) more technical details!
+You can find in the appendix of [S. Chen, J. Bucher, T. Liu, et al., 2025, A&A, 701, A144 (2025)](https://ui.adsabs.harvard.edu/abs/2025A%26A...701A.144C/exportcitation) more technical details!
 
 
 ## :wrench: Prerequisites and Installation
@@ -256,20 +256,21 @@ Please take a look at the `Step 3` of primary example in [`./demo/demo.ipynb`](h
 ## :books: If you find our code useful, please consider citing our work ... DANKE! :smiling_face_with_three_hearts:
 
 ```latex
-@ARTICLE{2025arXiv250617150C,
+@ARTICLE{2025A&A...701A.144C,
        author = {{Chen}, Shi-Jiang and {Buchner}, Johannes and {Liu}, Teng and {Hagen}, Scott and {Waddell}, Sophia G.~H. and {Nandra}, Kirpal and {Salvato}, Mara and {Igo}, Zsofi and {Aydar}, Catarina and {Merloni}, Andrea and {Ni}, Qingling and {Kang}, Jia-Lai and {Cai}, Zhen-Yi and {Wang}, Jun-Xian and {Li}, Ruancun and {Ramos-Ceja}, Miriam E. and {Sanders}, Jeremy and {Georgakakis}, Antonis and {Zhang}, Yi},
-        title = {The Average Soft X-ray Spectra of eROSITA Active Galactic Nuclei},
-      journal = {arXiv e-prints},
-     keywords = {High Energy Astrophysical Phenomena},
+        title = "{The average soft X-ray spectra of eROSITA active galactic nuclei}",
+      journal = {\aap},
+     keywords = {galaxies: active, X-rays: galaxies, High Energy Astrophysical Phenomena},
          year = 2025,
-        month = jun,
-          eid = {arXiv:2506.17150},
-        pages = {arXiv:2506.17150},
-          doi = {10.48550/arXiv.2506.17150},
+        month = sep,
+       volume = {701},
+          eid = {A144},
+        pages = {A144},
+          doi = {10.1051/0004-6361/202554737},
 archivePrefix = {arXiv},
        eprint = {2506.17150},
  primaryClass = {astro-ph.HE},
-       adsurl = {https://ui.adsabs.harvard.edu/abs/2025arXiv250617150C},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025A&A...701A.144C},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
