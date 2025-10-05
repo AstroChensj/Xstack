@@ -222,7 +222,7 @@ class XstackRunner:
         print("")
         print("******************* Shifting ... **********************")
         ## use backend="loky" to avoid memory leakage
-        results = Parallel(n_jobs=self.nthreads,backend="loky")(delayed(self.process_entry)(i) for i in tqdm(range(len(self.srcid_lst))))
+        results = Parallel(n_jobs=self.nthreads,backend="loky",verbose=1)(delayed(self.process_entry)(i) for i in tqdm(range(len(self.srcid_lst))))
         for result in results:
             pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene = result
             self.pi_sft_lst.append(pi_sft)

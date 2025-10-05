@@ -67,8 +67,9 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
         pi_coun[:idx_trc] = 0
     
     rest_chan = pi_chan.copy()
+    rest_coun = np.zeros(len(rest_chan),dtype=float) # the src-frame photon counts
+    # # NOTE: uncomment below to go back to previous version
     # rest_coun = np.zeros(len(rest_chan),dtype=int) # the src-frame photon counts
-    rest_coun = np.zeros(len(rest_chan),dtype=int) # the src-frame photon counts
     
     ene_ubound = ene_lo.max()
     ene_lbound = ene_hi.min() # set lower and upper bound of energy to avoid overflow issues
@@ -97,15 +98,16 @@ def shift_pi(pi_file,rmf_file,z,ene_trc=None):
         
         # Each channel in the basket would get number of photons proportional to its width
         prob_mask = ene_wd_mask / ene_wd_mask.sum() # the probability of entering each channel in the basket
-        # # NOTE: we do not force each channel to have integer number of photon counts at this step
-        # # Instead, we round them to integers after stacking all sources (`add_pi`), where each channel accumulates sufficient photon counts
-        # # This would be helpful when each individual source has only few counts in total
-        # phoct_mask = (pi_coun[i] * prob_mask).astype(float)   # this is float
+        # NOTE: we do not force each channel to have integer number of photon counts at this step
+        # Instead, we round them to integers after stacking all sources (`add_pi`), where each channel accumulates sufficient photon counts
+        # This would be helpful when each individual source has only few counts in total
+        phoct_mask = (pi_coun[i] * prob_mask).astype(float)   # this is float
 
-        phoct_mask = (pi_coun[i] * prob_mask).astype(int)
-        # if there are more than 1 channel in the basket, we want to make sure that the sum of photons in all bins are equal to pi_coun[i]
-        if len(phoct_mask) > 1:
-            phoct_mask[0] = pi_coun[i] - phoct_mask[1:].sum()
+        # # NOTE: uncomment below to go back to previous version
+        # phoct_mask = (pi_coun[i] * prob_mask).astype(int)
+        # # if there are more than 1 channel in the basket, we want to make sure that the sum of photons in all bins are equal to pi_coun[i]
+        # if len(phoct_mask) > 1:
+        #     phoct_mask[0] = pi_coun[i] - phoct_mask[1:].sum()
         
         # finally, assign the photons
         for idx in range(len(chan_id_mask)):
@@ -168,7 +170,8 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     pi_lst : list or numpy.ndarray
         PI file list.
     scal_lst : list or numpy.ndarray, optional
-        Weight (scaling ratio) list. Defaults to None (unity).
+        Weight (scaling ratio) list. None for source PI spectra, while 
+        bkg-to-source ratio for bkg PI spectra.
     fits_name : str, optional
         If specified, create a fits file with name `fits_name`. 
         Defaults to None.
@@ -249,24 +252,40 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     
     """
     pi_lst = np.array(pi_lst)
+
+    """
     if scal_lst is None:
         scal_lst = np.ones(pi_lst.shape[0])
     scal_lst = np.array(scal_lst)
-    assert pi_lst.shape[0] == scal_lst.shape[0], "pi number and ratio number do not match!"
+    """
+
+    # assert pi_lst.shape[0] == scal_lst.shape[0], "pi number and ratio number do not match!"
     
     # For spectral counts
-    pi_scal_lst = pi_lst * scal_lst[:,np.newaxis]
-    sum_pi = np.sum(pi_scal_lst, axis=0)
-    # # We round photon counts in each channel to nearest integer, to approximate Poisson
-    # # which is necessary to calculate uncertainties
-    # sum_pi = np.round(np.sum(pi_scal_lst, axis=0)).astype(int)
+    if scal_lst is None:    # source PI
+        # We round photon counts in each channel to nearest integer, to approximate Poisson
+        # which is necessary to calculate uncertainties
+        sum_pi = np.round(np.sum(pi_lst, axis=0)).astype(int)
+    else:                   # bkg PI
+        pi_scal_lst = pi_lst * scal_lst[:,np.newaxis]
+        sum_pi = np.sum(pi_scal_lst, axis=0)
+    
+    # # NOTE: uncomment below to go back to previous version
+    # sum_pi = np.sum(pi_scal_lst, axis=0)
     
     # For spectral counts uncertainties
     # Gaussian error propagation: each channel of `pi_scal_lst` has to have enough photon counts!
     # But this is generally not the case for bkg spectra (scal_lst << 1), so function `add_bkgpi` should be used instead!
-    pierr_lst = np.sqrt(pi_lst) # Poisson statistics
-    pierr_scal_lst = pierr_lst * scal_lst[:,np.newaxis] # see explanations above
-    sum_pierr = np.sqrt(np.sum(pierr_scal_lst**2, axis=0))
+    if scal_lst is None:    # source PI
+        sum_pierr = np.sqrt(sum_pi)
+    else:                   # bkg PI
+        pierr_lst = np.sqrt(pi_lst) # Poisson statistics
+        pierr_scal_lst = pierr_lst * scal_lst[:,np.newaxis] # see explanations above
+        sum_pierr = np.sqrt(np.sum(pierr_scal_lst**2, axis=0))
+    # # NOTE: uncomment below to go back to previous version
+    # pierr_lst = np.sqrt(pi_lst) # Poisson statistics
+    # pierr_scal_lst = pierr_lst * scal_lst[:,np.newaxis] # see explanations above
+    # sum_pierr = np.sqrt(np.sum(pierr_scal_lst**2, axis=0))
     
     # Write fits file (optional)
     if fits_name is not None:
@@ -356,7 +375,7 @@ def add_bkgpi(bkgpi_lst,bkgscal_lst,Ngrp=10,fits_name=None,expo=10):
     bkgpi_grp_lst = []
     for i in range(Ngrp):
         bkgpi_tmp = bkgpi_lst[bkggrpflg_lst==i]
-        bkgpi_grp_lst.append(add_pi(bkgpi_tmp)[0])
+        bkgpi_grp_lst.append(add_pi(bkgpi_tmp)[0])  # simply add without any scaling ratio
     bkgpi_grp_lst = np.array(bkgpi_grp_lst)
     # then sum the groups (scaling with average scaling ratio, and use Gaussian error propagation)
     bkgpi_UNUSED, bkgpi_err = add_pi(bkgpi_grp_lst,bkgscal_ave_lst)
