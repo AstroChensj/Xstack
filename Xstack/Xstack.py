@@ -19,6 +19,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import gc
 import os
+import time
 default_nh_file = os.path.join(os.path.dirname(__file__), "tbabs_1e20.txt")
 version_file = os.path.join(os.path.dirname(__file__), "VERSION")
 
@@ -238,16 +239,22 @@ class XstackRunner:
         # STACKING
         print("")
         print("******************* Stacking ... **********************")
+        t0 = time.time()
         expo = np.sum(self.expo_lst)
+        print("***************** Stacking PI ... *********************")
         pi_stk,pierr_stk = add_pi(
             self.pi_sft_lst,fits_name=self.o_pi_name,expo=expo,bkg_file=self.o_bkgpi_name,rmf_file=self.o_rmf_name,arf_file=self.o_arf_name,
         )
+        print("**************** Stacking BKGPI ... *******************")
         bkgpi_stk,bkgpierr_stk = add_bkgpi(
             self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,Ngrp=self.Nbkggrp,fits_name=self.o_bkgpi_name,expo=expo,
         )
+        print("***************** Stacking RSP ... ********************")
         arf_stk, rmf_stk, expo_stacked, rega_stacked = add_rsp(
             self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,ene_lo=ene_lo,ene_hi=ene_hi,arfene_lo=iene_lo,arfene_hi=iene_hi,expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,extended=self.extended,rega_lst=self.rega_lst,outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,sample_rmf=self.sample_rmf
         )
+        t1 = time.time()
+        print(f"Total time used for stacking: {t1-t0} s.")
         ## Update header of stacked PI
         fits.setval(self.o_pi_name,ext=1,keyword="EXPOSURE",value=expo_stacked,comment="Stacked exposure time [s]")
         fits.setval(self.o_pi_name,ext=1,keyword="REGAREA",value=rega_stacked,comment="Stacked region area [deg^2]")

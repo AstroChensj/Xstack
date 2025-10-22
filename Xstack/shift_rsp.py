@@ -240,14 +240,20 @@ def add_rsp(
         rsp1d_lst[i] = project_rspmat(rspmat_lst[i],ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="CHANNEL",gamma=rspproj_gamma)
     
     # calculate the weight for each RSP matrix
+    print("Calculating response weighting factors ...")
     rsp1d_lst = np.array(rsp1d_lst)
     rspwt_lst,rspnorm,expo_stacked,rega_stacked = compute_rspwt(rsp1d_lst,pi_lst,z_lst,bkgpi_lst,bkgscal_lst,expo_lst,ene_wd,flg,rspwt_method,extended,rega_lst)
 
     # stack the RSP matrix
-    rspmat_wt_lst = rspmat_lst * rspwt_lst[:,np.newaxis,np.newaxis]
-    sum_rspmat = np.sum(rspmat_wt_lst,axis=0)
+    print("Stacking responses ...")
+    # # instead of doing:
+    # rspmat_wt_lst = rspmat_lst * rspwt_lst[:,np.newaxis,np.newaxis]
+    # sum_rspmat = np.sum(rspmat_wt_lst,axis=0)
+    # faster way using Einstein summation:
+    sum_rspmat = np.einsum("i,ijk->jk",rspwt_lst,rspmat_lst,optimize=True)
 
     # extract ARF
+    print("Extracting ARF ...")
     sum_specresp = np.sum(sum_rspmat,axis=1)
     if outarf_name is not None:
         with fits.open(sample_arf) as hdu:
@@ -277,7 +283,7 @@ def add_rsp(
         hdu_specresp.header["HDUVERS"] = "1.1.0"
         hdu_specresp.header["EXPOSURE"] = (expo_stacked, "Stacked exposure time [s]")
         hdu_specresp.header["REGAREA"] = (rega_stacked, "Stacked region area [deg^2]")
-        hdu_specresp.header["WTMETH"] = rspwt_method
+        hdu_specresp.header["WTMETH"] = (rspwt_method, "Response weighting method [SHP/FLX/LMN]")
         hdu_specresp.header["CREATOR"] = "XSTACK"
         hdulist.append(hdu_specresp)
 
@@ -287,7 +293,7 @@ def add_rsp(
                 fits.Column(name="PHOCOUN", format="J", array=np.sum(pi_lst,axis=1)),
                 fits.Column(name="BPHOCOUN", format="D", array=np.sum(bkgpi_lst*bkgscal_lst[:,np.newaxis],axis=1))]
         hdu_weight = fits.BinTableHDU.from_columns(cols, name="WEIGHT")
-        hdu_weight.header["RSPNORM"] = rspnorm
+        hdu_weight.header["RSPNORM"] = (rspnorm, "Response normalizing factor")
         hdulist.append(hdu_weight)
 
         # extension 3: FLAG
@@ -300,6 +306,7 @@ def add_rsp(
         hdulist.writeto(f"{outarf_name}", overwrite=True)
 
     # extract RMF
+    print("Extracting RMF ...")
     with np.errstate(invalid="ignore"): # wrap up division warning
         sum_prob = sum_rspmat / sum_specresp[:,np.newaxis]
     sum_prob[np.isclose(sum_prob,0,rtol=1e-06, atol=1e-06, equal_nan=False)] = 0 # remove elements with probability below the 1e-6 threshold
@@ -645,7 +652,8 @@ def compute_rspwt(
     similar flux.
 
     `LMN` should only be used for rare case, where all sources to be 
-    summed have similar luminosity.
+    summed have similar luminosity. # Luminosity can be calcualted as
+    e.g., flux 0.5 2 --> luminosity in 0.5-2 keV band / 1e60 
 
     """
     expo_lst = np.array(expo_lst)
@@ -692,6 +700,7 @@ def compute_rspwt(
             rspwt_lst = expo_rega_lst / expo_stacked / rega_stacked
             # No normalization is performed, and thus chosen arbitrarily
             rspnorm = 1.0
+            rspwt_lst *= rspnorm
         # For point sources, flux in units of [erg/cm^2/s]
         else:
             # We take the summed exposure as the stacked EXPOSURE,
@@ -701,26 +710,27 @@ def compute_rspwt(
             rega_stacked = 1.0
             # No normalization is performed, and thus chosen arbitrarily
             rspnorm = 1.0
+            rspwt_lst *= rspnorm
 
     elif method == "LMN":   # LUMINOSITY
         # luminosity distances in units of [Mpc]
         dist_lst = Planck18.luminosity_distance(z_lst).to(u.cm).value
         if extended:
             expo_rega_lst = expo_lst * rega_lst
-            expo_rega_lmn_lst = expo_lst * rega_lst / (4*np.pi*dist_lst**2)
+            expo_rega_lmn_lst = expo_lst * rega_lst / (4*np.pi*dist_lst**2/(1+z_lst))
             # the averaged exposure following X. Zhang+2024
             expo_stacked = np.sum(expo_rega_lst) / np.sum(rega_lst)
             rega_stacked = 1.0
             rspwt_lst = expo_rega_lmn_lst / expo_stacked / rega_stacked
-            # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1.0       # arbitrary number
+            rspnorm = 1e60
+            rspwt_lst *= rspnorm    # to avoid too small number
         else:
             expo_stacked = np.sum(expo_lst)
-            rspwt_lst = expo_lst / (4*np.pi*dist_lst**2) / expo_stacked
+            rspwt_lst = expo_lst / (4*np.pi*dist_lst**2/(1+z_lst)) / expo_stacked
+            rspnorm = 1e60
+            rspwt_lst *= rspnorm    # to avoid too small number
             # REGAREA not involved at all, and thus chosen arbitrarily
             rega_stacked = 1.0
-            # No normalization is performed, and thus chosen arbitrarily
-            rspnorm = 1.0       # arbitrary number
 
     else:
         raise Exception("Available method for ARF scaling ratio calculation: `FLX`, `LMN`, or `SHP` !")
@@ -728,11 +738,11 @@ def compute_rspwt(
     print("****** Response weighting factor for each source ******")
     print(f"Your sources are {'extended sources' if extended else 'point sources'}.")
     if method == "SHP":
-        print("`SHP` mode: assuming all sources have similar spectral shape, and weights calculated as COUNTS/ARF (normalized).")
+        print("`SHP` mode: assuming all sources have similar spectral shape, and weights calculated as COUNTS/ARF (normalized). This gives the most robust estimate of average spectral shape, but the y-axis of stacked spectrum would not carry physical meaning.")
     elif method == "FLX":
-        print(f"`FLX` mode: assuming all sources have similar spectral shape + flux [{'erg/cm^2/s/deg^2' if extended else 'erg/cm^2/s'}], and weights calculated as {'EXPOSURE*REGAREA' if extended else 'EXPOSURE'}.")
+        print(f"`FLX` mode: assuming all sources have similar spectral shape + flux [{'erg/cm^2/s/deg^2' if extended else 'erg/cm^2/s'}], and weights calculated as {'EXPOSURE*REGAREA' if extended else 'EXPOSURE'}. Spectral shape may be biased if fluxes vary significantly among the sample. The y-axis of stacked spectrum gives the average flux.")
     elif method == "LMN":
-        print(f"`LMN` mode: assuming all sources have similar spectral shape + luminosity [{'erg/s/deg^2' if extended else 'erg/s'}], and weights calculated as {'EXPOSURE*REGAREA/DISTANCE**2' if extended else 'EXPOSURE/DISTANCE**2'}.")
+        print(f"`LMN` mode: assuming all sources have similar spectral shape + luminosity [{'erg/s/deg^2' if extended else 'erg/s'}], and weights calculated as {'EXPOSURE*REGAREA/DISTANCE**2' if extended else 'EXPOSURE/DISTANCE**2'}. Spectral shape may be biased if luminosities vary significantly among the sample. The y-axis of stacked spectrum gives the average luminosity, divided by 1e60.")
     print(f"Below is your response weighting factor list under `{method}` mode:")
     print(rspwt_lst)
     print("Full list can be seen in the `WEIGHT` extension of the output ARF file.")
