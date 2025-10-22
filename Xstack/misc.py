@@ -602,7 +602,7 @@ def valid_energy_range_plot(fene_name,src_name,grp_name,bkg_name,rmf_name,ax=Non
     grpflg = data["GROUPING"]
     grpene_lo,grpene_hi,grppha,grpphaerr = rebin_pi(ene_lo,ene_hi,pha,phaerr,grpflg)
     grpene_lo,grpene_hi,grpbkgpha,grpbkgphaerr = rebin_pi(ene_lo,ene_hi,bkgpha,bkgphaerr,grpflg)
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         grpbkgfrac = grpbkgpha/grppha
     grpene_wd = grpene_hi - grpene_lo
     grpene_ce = (grpene_lo + grpene_hi) / 2
@@ -961,9 +961,149 @@ def view_rmf(
     cbar.set_label("Probability",size=14)
 
     if fig_name is not None: 
-        plt.savefig("%s"%fig_name,bbox_inches="tight",transparent=False,dpi=300)
+        plt.savefig(fig_name,bbox_inches="tight",transparent=False,dpi=300)
 
     return ax
+
+
+#===================================================
+############## Make Dispersion Map #################
+#===================================================
+def gaussian(x, amplitude, mean, stddev):
+    """
+    A gaussian function.
+
+    Parameters
+    ----------
+    x : float or numpy.ndarray
+    amplitude : float
+    mean : float
+    stddev : float
+
+    Returns
+    -------
+    pdf : float or numpy.ndarray
+        The probability at x.
+    """
+    pdf = amplitude * np.exp(-((x - mean) / stddev) ** 2 / 2)
+    return pdf
+
+
+def get_ene_dsp(ene_ce,prob_lst,fixed_mean=True):
+    """
+    Get energy dispersion.
+
+    Parameters
+    ----------
+    ene_ce : numpy.ndarray
+        Output central channel energy.
+    prob_lst : numpy.ndarray
+        Probability profile for some input model energy (this is a function of output channel energy). Must have same length as `ene_ce`.
+    fixed_mean : bool
+        If true, the mean energy of the Gaussian will be fixed at the nominal energy (which corresponds to maximal probability).
+
+    Returns
+    -------
+    norm : float
+        The Gaussian normalization.
+    ene_nom : float
+        The Gaussian central energy (this is the nominal energy for some input energy).
+    ene_dsp : float
+        The Gaussian width (this is the energy dispersion for some input energy).
+    """
+    from scipy.optimize import curve_fit
+    ene_nom = ene_ce[np.argmax(prob_lst)] # nominal energy
+    if fixed_mean:
+        mlo = ene_nom # lower bound for mean
+        mhi = ene_nom + 1e-6 # upper bound for mean
+    else:
+        mlo = 0
+        mhi = np.inf
+    popt, pcov = curve_fit(
+        gaussian, ene_ce, prob_lst,
+        p0=[1, ene_nom, 1], bounds=([0, mlo, 0], [np.inf, mhi, np.inf])
+    )
+    norm = popt[0]
+    ene_dsp = popt[2]
+    return norm,ene_nom,ene_dsp
+
+
+def make_dspmap(mat,ebo,out_name):
+    """
+    Make energy dispersion map.
+    
+    Parameters
+    ----------
+    mat : astropy.io.fits.FITS_rec
+        The `MATRIX` HDU data from a standard RMF file.
+    ebo : astropy.io.fits.FITS_rec
+        The `EBOUNDS` HDU data from a standard RMF file.
+    out_name : str
+        The output dispersion map name.
+
+    Returns
+    -------
+    None.
+    """
+    iene_lo = mat["ENERG_LO"]
+    iene_hi = mat["ENERG_HI"]
+    iene_ce = (iene_lo + iene_hi) / 2
+    iene_wd = (iene_hi - iene_lo)
+    
+    ene_lo = ebo["E_MIN"]
+    ene_hi = ebo["E_MAX"]
+    ene_ce = (ene_lo + ene_hi) / 2
+    ene_wd = (ene_hi - ene_lo)
+    
+    # get prob_lst
+    grid = np.meshgrid(ene_ce,iene_ce) # ( (len(iene_ce),len(ene_ce)), (len(iene_ce),len(ene_ce)) )
+    prob = np.zeros(grid[0].shape) # probability per channel
+    
+    n_grp = mat["N_GRP"]
+    f_chan = mat["F_CHAN"]
+    n_chan = mat["N_CHAN"]
+    mat = mat["MATRIX"]
+    
+    f_chan_0 = int(np.min([np.min(f_chan[_]) for _ in range(len(f_chan))])) # the zero point of channel index
+    for i in range(len(iene_ce)):
+        f_mat = 0
+        for grp_j in range(n_grp[i]):
+            f_chan_j = f_chan[i][grp_j] - f_chan_0
+            n_chan_j = n_chan[i][grp_j]
+            e_chan_j = f_chan_j + n_chan_j # ending index of group_j in channel
+            e_mat = f_mat + n_chan_j # ending index of group_j in matrix[i]
+            
+            prob[i][f_chan_j:e_chan_j] += mat[i][f_mat:e_mat]
+            f_mat += n_chan_j
+    
+    prob_ene = prob / ene_wd # probability per energy bin
+    
+    # get nominal energy and energy dispersion
+    print("****************** Generating dspmap ********************")
+    norm = []
+    ene_nom = []
+    ene_dsp = []
+    for i in tqdm(range(len(iene_ce))):
+        norm_i,ene_nom_i,ene_dsp_i = get_ene_dsp(ene_ce,prob_ene[i],fixed_mean=True)
+        norm_i /= (gaussian(ene_ce,norm_i,ene_nom_i,ene_dsp_i)*ene_wd).sum() # renormalize the gaussian profile
+        norm.append(norm_i)
+        ene_nom.append(ene_nom_i)
+        ene_dsp.append(ene_dsp_i)
+    norm = np.array(norm)
+    ene_nom = np.array(ene_nom)
+    ene_dsp = np.array(ene_dsp)
+    
+    # make fits file
+    column_names = ["ENERG_LO","ENERG_HI","norm","ene_nom","ene_dsp"]
+    formats = ["D","D","D","D","D"]
+    arrays = [iene_lo,iene_hi,norm,ene_nom,ene_dsp]
+    columns = [fits.Column(name=col_name,format=format_,array=array_) for col_name,format_,array_ in zip(column_names,formats,arrays)]
+    coldefs = fits.ColDefs(columns)
+    table = fits.BinTableHDU.from_columns(coldefs)
+    table.writeto(out_name,overwrite=True)
+    print("****************** dspmap successfully generated! ********************")
+    
+    return
 
 
 #===================================================
