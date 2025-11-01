@@ -11,9 +11,8 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.interpolate import RegularGridInterpolator
-from joblib import Parallel,delayed
 from tqdm import tqdm
-from Xstack.shift_rsp import get_prob,get_prob1d
+from Xstack.shift_rsp import get_prob,get_prob1d,get_tlmin_from_header
 from Xstack.shift_pi import get_bkgscal,get_expo
 
 
@@ -1148,7 +1147,8 @@ def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
     f_chan1 = mat1["F_CHAN"]
     n_chan1 = mat1["N_CHAN"]
     matrix1 = np.array(mat1["MATRIX"])
-    f_chan1_0 = int(np.min([np.min(f_chan1[_]) for _ in range(len(f_chan1))])) # the zero point of channel index
+    # f_chan1_0 = int(np.min([np.min(f_chan1[_]) for _ in range(len(f_chan1))])) # the zero point of channel index
+    f_chan1_0 = get_tlmin_from_header(rmffile1)
 
     with fits.open(rmffile2) as hdu:
         mat2 = hdu["MATRIX"].data
@@ -1161,7 +1161,8 @@ def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
     f_chan2 = mat2["F_CHAN"]
     n_chan2 = mat2["N_CHAN"]
     matrix2 = np.array(mat2["MATRIX"])
-    f_chan2_0 = int(np.min([np.min(f_chan2[_]) for _ in range(len(f_chan2))])) # the zero point of channel index
+    # f_chan2_0 = int(np.min([np.min(f_chan2[_]) for _ in range(len(f_chan2))])) # the zero point of channel index
+    f_chan2_0 = get_tlmin_from_header(rmffile2)
 
     assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmffile1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmffile2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
     assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmffile1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmffile2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
@@ -1567,7 +1568,8 @@ def fold_model(modelfile,rmffile,arffile,out_name):
     ene_hi = ebo["E_MAX"]
     ene_ce = (ene_lo + ene_hi) / 2
     ene_wd = ene_hi - ene_lo
-    prob = get_prob(mat,ebo)
+    f_chan_0 = get_tlmin_from_header(rmffile)
+    prob = get_prob(mat,ebo,f_chan_0)
 
     # in case you have any nan values
     prob[np.isclose(prob,0,rtol=1e-06, atol=1e-06, equal_nan=False)] = 0 # remove elements with probability below the 1e-6 threshold
@@ -1627,7 +1629,7 @@ def fold_model(modelfile,rmffile,arffile,out_name):
             hdu_lst.append(hdu_data)
 
     # write fits file
-    hdu_lst.writeto("%s"%(out_name), overwrite=True)
+    hdu_lst.writeto(f"{out_name}", overwrite=True)
 
     return
 

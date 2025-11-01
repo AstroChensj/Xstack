@@ -74,15 +74,14 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
     specresp = arf["SPECRESP"]
 
     with fits.open(rmffile) as hdu:
-        try:
-            mat = hdu["MATRIX"].data
-        except Exception as e:
-            raise Exception(f"{rmffile} is corrupted!")
+        mat = hdu["MATRIX"].data
         ebo = hdu["EBOUNDS"].data
     ene_lo = ebo["E_MIN"].astype(np.float32)
     ene_hi = ebo["E_MAX"].astype(np.float32)
     iene_lo = mat["ENERG_LO"].astype(np.float32)
     iene_hi = mat["ENERG_HI"].astype(np.float32)
+    # get f_chan_0 using TLMIN* keyword according to OGIP standards
+    f_chan_0 = get_tlmin_from_header(rmffile)
 
     # sanity check: if the energy bins match
     assert np.all(arfene_lo==iene_lo), "arfene_lo (from arffile) and iene_lo (from rmffile) do not match!"
@@ -112,7 +111,7 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
         specresp[:idx_trc] = 0
 
     # combine ARF and RMF into a single RSP matrix
-    prob = get_prob(mat,ebo)                # the RMF 2D matrix, shape=(iene_ce, ene_ce)
+    prob = get_prob(mat,ebo,f_chan_0)       # the RMF 2D matrix, shape=(iene_ce, ene_ce)
     rspmat = prob*specresp[:,np.newaxis]    # the RSP matrix (RMF*ARF)
 
     # finally, shift the RSP matrix (currently we use only Non-parametric method, which is the most accurate one)
@@ -810,7 +809,7 @@ def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):
     return specresp_cor
 
 
-def get_prob(mat,ebo):
+def get_prob(mat,ebo,f_chan_0=None):
     """
     Parse the RMF file (input the `MATRIX` and `EBOUNDS` extension) into 
     a 2D probability matrix. 
@@ -831,6 +830,9 @@ def get_prob(mat,ebo):
         the following columns:
         - `E_MIN` 
         - `E_MAX`
+    f_chan_0 : int, optional
+        First channel index. Defaults to None. 
+        If not specified, will be determined from rmf file.
 
     Returns
     -------
@@ -855,7 +857,10 @@ def get_prob(mat,ebo):
     n_chan = mat["N_CHAN"]
     matrix = np.array(mat["MATRIX"])
     
-    f_chan_0 = int(np.min([np.min(f_chan[_]) for _ in range(len(f_chan))])) # the zero point of channel index
+    # sanity check on f_chan_0
+    if f_chan_0 not in [0,1]:
+        f_chan_0 = int(np.min([np.min(f_chan[_]) if len(f_chan[_])>0 else 0 for _ in range(len(f_chan))])) # the zero point of channel index
+
     for i in range(len(iene_ce)):
         f_matrix = 0   # starting index of matrix[i]
         for grp_j in range(n_grp[i]):
@@ -870,7 +875,7 @@ def get_prob(mat,ebo):
     return prob
 
 
-def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=0):
+def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=None):
     """
     Get the 1d probability distribution for output channel energy at a 
     specific input model energy.
@@ -902,6 +907,9 @@ def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=0):
         specific input model energy.
     """
     f_matrix = 0   # starting index of matrix1d
+    # sanity check on f_chan_0
+    if f_chan_0 not in [0,1]:
+        f_chan_0 = int(np.min([np.min(f_chan[_]) if len(f_chan[_])>0 else 0 for _ in range(len(f_chan))]))
     prob1d = np.zeros(Nene)
     for j in range(n_grp):
         f_chan_j = f_chan[j] - f_chan_0         # starting index of channel
@@ -910,4 +918,30 @@ def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=0):
         e_matrix = f_matrix + n_chan_j          # ending index of matrix[i]
         prob1d[f_chan_j:e_chan_j] += matrix1d[f_matrix:e_matrix]
         f_matrix += n_chan_j
+
     return prob1d
+
+
+def get_tlmin_from_header(rmffile):
+    """
+    Get first channel index from keyword TLMIN*, according to OGIP 
+    standards.
+
+    Parameters
+    ----------
+    rmffile : str
+        The RMF file name.
+
+    Returns
+    -------
+    f_chan_0 : int
+        First channel index. Will be None if not found.
+    """
+    mat_hdr = fits.getheader(rmffile,extname="MATRIX")
+    f_chan_0 = [mat_hdr[k] for k in mat_hdr if k.startswith("TLMIN")]
+    if len(f_chan_0) > 0:
+        f_chan_0 = f_chan_0[0]
+    else:
+        f_chan_0 = None
+
+    return f_chan_0

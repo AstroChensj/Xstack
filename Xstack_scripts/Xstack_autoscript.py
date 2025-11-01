@@ -75,9 +75,9 @@ from Xstack import Xstack,rsXstack
 import numpy as np
 from astropy.io import fits as pyfits
 import os
-import shutil
 import sys
 import argparse
+import warnings
 
 nh_file = Xstack.default_nh_file
 script_path = os.path.abspath(__file__) # the absolute path of Xstack_autoscript.py
@@ -140,7 +140,12 @@ def main():
         if os.path.exists(backfile) and os.path.isfile(backfile):
             b = pyfits.open(backfile)
             bheader = b["SPECTRUM"].header
-            assert bheader.get("ANCRFILE", "none") in ("none", header["ANCRFILE"]), f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}'
+            if bheader.get("ANCRFILE", "none") not in ("none", header["ANCRFILE"]):
+                warnings.warn(
+                    f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}',
+                    UserWarning,
+                )
+            # assert bheader.get("ANCRFILE", "none") in ("none", header["ANCRFILE"]), f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}'
         else:
             backfile = None
 
