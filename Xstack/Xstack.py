@@ -290,7 +290,10 @@ class XstackRunner:
     ###### internal function #####
     def process_entry(self,i):
         pifile = self.pifile_lst[i]
-        bkgpifile = self.bkgpifile_lst[i]
+        if self.bkgpifile_lst is not None:
+            bkgpifile = self.bkgpifile_lst[i]
+        else:
+            bkgpifile = None
         arffile = self.arffile_lst[i]
         rmffile = self.rmffile_lst[i]
         z = self.z_lst[i]
@@ -330,7 +333,10 @@ class XstackRunner:
         del hdu["MATRIX"].data, hdu["EBOUNDS"].data  # to clear memory
 
         # BKGSCAL & EXPOSURE & REGAREA
-        bkgscal = get_bkgscal(pifile,bkgpifile)
+        if bkgpifile is not None:
+            bkgscal = get_bkgscal(pifile,bkgpifile)
+        else:
+            bkgscal = 1
         expo = get_expo(pifile)
         rega = get_rega(pifile)
         

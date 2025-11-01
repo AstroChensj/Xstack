@@ -206,7 +206,7 @@ class resample_XstackRunner:
         """
         # shutil.rmtree("%s"%self.o_dir_name,ignore_errors=True)
         # os.mkdir("%s"%self.o_dir_name) # make a directory to store all bootstrapped stacked pi, bkgpi, ARF and RMF files
-        os.system(f"mkdir -p {self.o_dir_name}")
+        # os.system(f"mkdir -p {self.o_dir_name}")
         if self.resample_method == "bootstrap":
             np.random.seed(self.num_bootstrap) # initialize seed
             for i in range(self.num_bootstrap):
@@ -219,7 +219,7 @@ class resample_XstackRunner:
                 sampled_z_lst = self.z_lst[sampled_idx]
                 sampled_nh_lst = self.nh_lst[sampled_idx]
                 sampled_srcid_lst = self.srcid_lst[sampled_idx]
-                prefix_i = f"{self.prefix}{idx}"
+                prefix_i = f"{self.prefix}{idx}_"
                 
                 XstackRunner_i = XstackRunner(
                     pifile_lst=sampled_pifile_lst,
@@ -269,7 +269,7 @@ class resample_XstackRunner:
                 sampled_sortedbkgpifile_lst = sortedbkgpifile_lst[mask]
                 sampled_sortednh_lst = sortednh_lst[mask]
                 sampled_sortedsrcid_lst = sortedsrcid_lst[mask]
-                prefix_i = f"{self.prefix}{idx}"
+                prefix_i = f"{self.prefix}{idx}_"
 
                 XstackRunner_i = XstackRunner(
                     pifile_lst=sampled_sortedpifile_lst,

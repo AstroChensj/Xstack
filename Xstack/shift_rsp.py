@@ -74,7 +74,10 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
     specresp = arf["SPECRESP"]
 
     with fits.open(rmffile) as hdu:
-        mat = hdu["MATRIX"].data
+        try:
+            mat = hdu["MATRIX"].data
+        except Exception as e:
+            raise Exception(f"{rmffile} is corrupted!")
         ebo = hdu["EBOUNDS"].data
     ene_lo = ebo["E_MIN"].astype(np.float32)
     ene_hi = ebo["E_MAX"].astype(np.float32)

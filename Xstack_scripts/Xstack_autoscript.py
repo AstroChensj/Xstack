@@ -137,9 +137,12 @@ def main():
               rmffile = args.same_rmf
         arffile = os.path.join(path, header["ANCRFILE"])
 
-        b = pyfits.open(backfile)
-        bheader = b["SPECTRUM"].header
-        assert bheader.get("ANCRFILE", "none") in ("none", header["ANCRFILE"]), f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}'
+        if os.path.exists(backfile) and os.path.isfile(backfile):
+            b = pyfits.open(backfile)
+            bheader = b["SPECTRUM"].header
+            assert bheader.get("ANCRFILE", "none") in ("none", header["ANCRFILE"]), f'background must have same ARF; but got {bheader.get("ANCRFILE")} instead of {header["ANCRFILE"]}'
+        else:
+            backfile = None
 
         z = float(open(filename + ".z").read())
         z_lst.append(z)
@@ -150,10 +153,12 @@ def main():
         arffile_lst.append(arffile)
         rmffile_lst.append(rmffile)
 
+    if np.all([bkgfile is None for bkgfile in bkgpifile_lst]):
+        bkgpifile_lst = None
 
     if args.num_bkg_groups > len(pifile_lst):
-          print("Warning! `Nbkggrp` must be smaller than the number of spectra loaded. `Nbkggrp` is now set to 1.")
-          args.num_bkg_groups = 1
+        print("Warning! `Nbkggrp` must be smaller than the number of spectra loaded. `Nbkggrp` is now set to 1.")
+        args.num_bkg_groups = 1
 
 
     if args.resample_method == "None":    # no resampling: single stack
