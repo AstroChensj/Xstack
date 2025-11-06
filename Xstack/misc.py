@@ -870,26 +870,9 @@ def view_rmf(
     ene_lo = ebo["E_MIN"] # output energy lower edge
     ene_hi = ebo["E_MAX"] # output energy upper edge
     ene_ce = (ene_lo + ene_hi) / 2
-    
-    grid = np.meshgrid(ene_ce,iene_ce) # ( (len(iene_ce),len(ene_ce)), (len(iene_ce),len(ene_ce)) )
-    prob = np.zeros(grid[0].shape)
-    
-    n_grp = mat["N_GRP"]
-    f_chan = mat["F_CHAN"]
-    n_chan = mat["N_CHAN"]
-    mat = mat["MATRIX"]
-    
-    f_chan_0 = int(f_chan.min()) # the zero point of channel index
-    for i in range(len(iene_ce)):
-        f_mat = 0
-        for grp_j in range(n_grp[i]):
-            f_chan_j = f_chan[i][grp_j] - f_chan_0
-            n_chan_j = n_chan[i][grp_j]
-            e_chan_j = f_chan_j + n_chan_j # ending index of group_j in channel
-            e_mat = f_mat + n_chan_j # ending index of group_j in matrix[i]
-            
-            prob[i][f_chan_j:e_chan_j] += mat[i][f_mat:e_mat]
-            f_mat += n_chan_j
+
+    f_chan_0 = get_tlmin_from_header(rmf_file)
+    prob = get_prob(mat,ebo,f_chan_0)   # 2D RNF probability matrix
             
     # The energy bin width may not be uniform
     # e.g. smaller energy bin width near 0.05 keV, but larger energy bin width near 16 keV
@@ -1027,7 +1010,7 @@ def get_ene_dsp(ene_ce,prob_lst,fixed_mean=True):
     return norm,ene_nom,ene_dsp
 
 
-def make_dspmap(mat,ebo,out_name):
+def make_dspmap(mat,ebo,out_name,f_chan_0=None):
     """
     Make energy dispersion map.
     
@@ -1039,6 +1022,9 @@ def make_dspmap(mat,ebo,out_name):
         The `EBOUNDS` HDU data from a standard RMF file.
     out_name : str
         The output dispersion map name.
+    f_chan_0 : int, optional
+		First channel index. Defaults to None. 
+		If not specified, will be determined from rmf file.
 
     Returns
     -------
@@ -1055,26 +1041,7 @@ def make_dspmap(mat,ebo,out_name):
     ene_wd = (ene_hi - ene_lo)
     
     # get prob_lst
-    grid = np.meshgrid(ene_ce,iene_ce) # ( (len(iene_ce),len(ene_ce)), (len(iene_ce),len(ene_ce)) )
-    prob = np.zeros(grid[0].shape) # probability per channel
-    
-    n_grp = mat["N_GRP"]
-    f_chan = mat["F_CHAN"]
-    n_chan = mat["N_CHAN"]
-    mat = mat["MATRIX"]
-    
-    f_chan_0 = int(np.min([np.min(f_chan[_]) for _ in range(len(f_chan))])) # the zero point of channel index
-    for i in range(len(iene_ce)):
-        f_mat = 0
-        for grp_j in range(n_grp[i]):
-            f_chan_j = f_chan[i][grp_j] - f_chan_0
-            n_chan_j = n_chan[i][grp_j]
-            e_chan_j = f_chan_j + n_chan_j # ending index of group_j in channel
-            e_mat = f_mat + n_chan_j # ending index of group_j in matrix[i]
-            
-            prob[i][f_chan_j:e_chan_j] += mat[i][f_mat:e_mat]
-            f_mat += n_chan_j
-    
+    prob = get_prob(mat,ebo,f_chan_0)   # 2D RNF probability matrix
     prob_ene = prob / ene_wd # probability per energy bin
     
     # get nominal energy and energy dispersion
@@ -1147,7 +1114,6 @@ def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
     f_chan1 = mat1["F_CHAN"]
     n_chan1 = mat1["N_CHAN"]
     matrix1 = np.array(mat1["MATRIX"])
-    # f_chan1_0 = int(np.min([np.min(f_chan1[_]) for _ in range(len(f_chan1))])) # the zero point of channel index
     f_chan1_0 = get_tlmin_from_header(rmffile1)
 
     with fits.open(rmffile2) as hdu:
@@ -1161,7 +1127,6 @@ def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
     f_chan2 = mat2["F_CHAN"]
     n_chan2 = mat2["N_CHAN"]
     matrix2 = np.array(mat2["MATRIX"])
-    # f_chan2_0 = int(np.min([np.min(f_chan2[_]) for _ in range(len(f_chan2))])) # the zero point of channel index
     f_chan2_0 = get_tlmin_from_header(rmffile2)
 
     assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmffile1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmffile2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
