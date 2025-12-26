@@ -12,7 +12,6 @@ Main wrapper module for all spectral shifting+stacking procedures
 from .shift_pi import *
 from .shift_rsp import *
 from .misc import fene_fits
-
 import numpy as np
 from astropy.io import fits
 from joblib import Parallel, delayed

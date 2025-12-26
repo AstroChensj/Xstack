@@ -78,7 +78,7 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
         elif os.path.exists(src_rmf):
             rmf_file = src_rmf
         else:
-            raise Exception("Either the RMF file is not specified as `rmf_file`, or the one in %s does not exist!"%src_name)
+            raise Exception(f"Either the RMF file is not specified as `rmf_file`, or the one in {src_name} does not exist!")
         
         with fits.open(rmf_file) as hdu:
             ebo = hdu["EBOUNDS"].data
