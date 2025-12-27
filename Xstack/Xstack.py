@@ -51,7 +51,11 @@ class XstackRunner:
 
     """
     def __init__(
-            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,bkgpifile_lst=None,nh_lst=None,srcid_lst=None,rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),sample_rmf=None,sample_arf=None,nh_file=None,Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,prefix="./results/stacked_",
+            self,pifile_lst,arffile_lst,rmffile_lst,z_lst,
+            bkgpifile_lst=None,nh_lst=None,srcid_lst=None,
+            rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),
+            sample_rmf=None,sample_arf=None,nh_file=None,
+            Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,prefix="./results/stacked_",
         ):
         """
         Parameters
@@ -121,6 +125,7 @@ class XstackRunner:
             Prefix for output stacked PI, BKGPI, ARF, and RMF files. 
             Defaults to './results/stacked_'
         """
+        #--- basic setup
         self.pifile_lst = pifile_lst
         self.arffile_lst = arffile_lst
         self.rmffile_lst = rmffile_lst
@@ -155,19 +160,32 @@ class XstackRunner:
         self.extended = extended
         self.nthreads = nthreads
 
-        # creating output directory
+        #--- creating output directory
         self.outdir = os.path.dirname(prefix)
         if self.outdir != "":
             os.makedirs(self.outdir,exist_ok=True)
 
-        prefix_base = os.path.basename(prefix)
-        self.o_pi_name = f"{prefix_base}pi.fits"
-        self.o_bkgpi_name = f"{prefix_base}bkgpi.fits"
-        self.o_arf_name = f"{prefix_base}arf.fits"
-        self.o_rmf_name = f"{prefix_base}rmf.fits"
-        self.o_fene_name = f"{prefix_base}fene.fits"
+        self.o_pi_name = f"{prefix}pi.fits"
+        self.o_bkgpi_name = f"{prefix}bkgpi.fits"
+        self.o_arf_name = f"{prefix}arf.fits"
+        self.o_rmf_name = f"{prefix}rmf.fits"
+        self.o_fene_name = f"{prefix}fene.fits"
 
-        # creating empty lists to store results
+        #--- read ARF energy edges and RMF energy edges
+        ##--- NOTE: this assumes RMF energies are identical across the sample (i.e., from the same instrument) !!!
+        with fits.open(self.sample_rmf) as hdu:
+            mat = hdu["MATRIX"].data
+            ebo = hdu["EBOUNDS"].data
+        self.ENE_LO = ebo["E_MIN"]
+        self.ENE_HI = ebo["E_MAX"]
+        self.ENE_CE = (self.ENE_LO + self.ENE_HI) / 2
+        self.ENE_WD = self.ENE_HI - self.ENE_LO
+        self.IENE_LO = mat["ENERG_LO"]
+        self.IENE_HI = mat["ENERG_HI"]
+        self.IENE_CE = (self.IENE_LO + self.IENE_HI) / 2
+        self.IENE_WD = self.IENE_HI - self.IENE_LO
+
+        #--- creating empty lists to store results
         self.pi_sft_lst = []
         self.rspmat_sft_lst = []
         self.bkgpi_sft_lst = []
@@ -201,30 +219,31 @@ class XstackRunner:
         print(f"Number of CPUs used for shifting RMF: {self.nthreads}")
         print(f"Number of background groups: {self.Nbkggrp}")
         print(f"Output directory: {self.outdir}")
-        print(f"Output PI spectrum (base)name: {os.path.join(self.outdir,self.o_pi_name)}")
-        print(f"Output bkg PI spectrum (base)name: {os.path.join(self.outdir,self.o_bkgpi_name)}")
-        print(f"Output ARF (base)name: {os.path.join(self.outdir,self.o_arf_name)}")
-        print(f"Output RMF (base)name: {os.path.join(self.outdir,self.o_rmf_name)}")
-        print(f"Output FENE (base)name: {os.path.join(self.outdir,self.o_fene_name)}")
+        print(f"Output PI spectrum (base)name: {self.o_pi_name}")
+        print(f"Output bkg PI spectrum (base)name: {self.o_bkgpi_name}")
+        print(f"Output ARF (base)name: {self.o_arf_name}")
+        print(f"Output RMF (base)name: {self.o_rmf_name}")
+        print(f"Output FENE (base)name: {self.o_fene_name}")
         print("*******************************************************")
         
-        with fits.open(self.sample_rmf) as hdu:
-            mat = hdu["MATRIX"].data
-            ebo = hdu["EBOUNDS"].data
-        ene_lo = ebo["E_MIN"]
-        ene_hi = ebo["E_MAX"]
-        iene_lo = mat["ENERG_LO"]
-        iene_hi = mat["ENERG_HI"]
-
-        del hdu["MATRIX"].data,hdu["EBOUNDS"].data  # to clear memory
-        
-        # SHIFTING
+        #--- SHIFTING
         print("")
         print("******************* Shifting ... **********************")
-        ## use backend="loky" to avoid memory leakage
-        results = Parallel(n_jobs=self.nthreads,backend="loky",verbose=1)(delayed(self.process_entry)(i) for i in tqdm(range(len(self.srcid_lst))))
-        for result in results:
-            pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene = result
+        N = len(self.srcid_lst)
+        t0 = time.time()
+        results = Parallel(
+            n_jobs=self.nthreads,
+            backend="loky",     ## use backend="loky" to avoid memory leakage
+            # verbose=1,
+            # return_as="generator",
+            # pre_dispatch=self.nthreads,
+        )(
+            delayed(self.process_entry)(i)
+            for i in tqdm(range(N))
+        )
+
+        print("collecting results ...")
+        for pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene in tqdm(results,total=N,desc="collecting"):
             self.pi_sft_lst.append(pi_sft)
             self.bkgpi_sft_lst.append(bkgpi_sft)
             self.rspmat_sft_lst.append(rspmat_sft)
@@ -233,24 +252,33 @@ class XstackRunner:
             self.rega_lst.append(rega)
             self.arffene_lst.append(arffene)
             self.fene_lst.append(fene)
-        del results
 
-        # STACKING
+        t1 = time.time()
+        print(f"Total time used for shifting: {t1-t0} s.")
+
+        #--- STACKING
         print("")
         print("******************* Stacking ... **********************")
         t0 = time.time()
         expo = np.sum(self.expo_lst)
         print("***************** Stacking PI ... *********************")
         pi_stk,pierr_stk = add_pi(
-            self.pi_sft_lst,fits_name=self.o_pi_name,expo=expo,bkg_file=self.o_bkgpi_name,rmf_file=self.o_rmf_name,arf_file=self.o_arf_name,
+            self.pi_sft_lst,fits_name=self.o_pi_name,expo=expo,
+            bkg_file=self.o_bkgpi_name,rmf_file=self.o_rmf_name,arf_file=self.o_arf_name,
         )
         print("**************** Stacking BKGPI ... *******************")
         bkgpi_stk,bkgpierr_stk = add_bkgpi(
-            self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,Ngrp=self.Nbkggrp,fits_name=self.o_bkgpi_name,expo=expo,
+            self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,
+            Ngrp=self.Nbkggrp,fits_name=self.o_bkgpi_name,expo=expo,
         )
         print("***************** Stacking RSP ... ********************")
         arf_stk, rmf_stk, expo_stacked, rega_stacked = add_rsp(
-            self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,ene_lo=ene_lo,ene_hi=ene_hi,arfene_lo=iene_lo,arfene_hi=iene_hi,expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,extended=self.extended,rega_lst=self.rega_lst,outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,sample_rmf=self.sample_rmf
+            self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,
+            bkgscal_lst=self.bkgscal_lst,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
+            expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,
+            extended=self.extended,rega_lst=self.rega_lst,
+            outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,
+            sample_rmf=self.sample_rmf
         )
         t1 = time.time()
         print(f"Total time used for stacking: {t1-t0} s.")
@@ -263,22 +291,18 @@ class XstackRunner:
         if self.o_fene_name is not None:
             fene_fits(self.srcid_lst,self.arffene_lst,self.fene_lst,self.o_fene_name)
 
-        # Move all output files to outdir
-        if self.outdir != "":
-            os.system(f"mv {self.o_pi_name} {self.o_bkgpi_name} {self.o_arf_name} {self.o_rmf_name} {self.o_fene_name} {self.outdir}")
-
         del self.rspmat_sft_lst # to clear memory
 
         print("")
         print(f"#######################################################")
         print(f"########## Stacking {len(self.srcid_lst)} spectra completed! ###########")
         print(f"#######################################################")
-        print(f"Stacked PI spectrum saved to: {os.path.join(self.outdir,self.o_pi_name)}")
-        print(f"Stacked BKGPI spectrum saved to: {os.path.join(self.outdir,self.o_bkgpi_name)}")
-        print(f"Stacked ARF saved to: {os.path.join(self.outdir,self.o_arf_name)}")
-        print(f"Stacked RMF saved to: {os.path.join(self.outdir,self.o_rmf_name)}")
+        print(f"Stacked PI spectrum saved to: {self.o_pi_name}")
+        print(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_name}")
+        print(f"Stacked ARF saved to: {self.o_arf_name}")
+        print(f"Stacked RMF saved to: {self.o_rmf_name}")
         if self.o_fene_name is not None:
-            print(f"Stacked FENE saved to: {os.path.join(self.outdir,self.o_fene_name)}")
+            print(f"Stacked FENE saved to: {self.o_fene_name}")
         print("")
         print(f"# NOTE: the output stacked spectra have {{BACK,AREA,CORR}}SCAL=1, even though the inputs have different ratios. This is because these information have already gone into the background spectrum by scaling it.")
         print("")
@@ -288,6 +312,7 @@ class XstackRunner:
 
     ###### internal function #####
     def process_entry(self,i):
+
         pifile = self.pifile_lst[i]
         if self.bkgpifile_lst is not None:
             bkgpifile = self.bkgpifile_lst[i]
@@ -298,40 +323,28 @@ class XstackRunner:
         z = self.z_lst[i]
         nh = self.nh_lst[i]
 
-        # pi shifting
-        (pi_chan_sft,pi_coun_sft,pi_chan,pi_coun) = shift_pi(pifile,self.sample_rmf,z,self.ene_trc)
-        pi_sft = pi_coun_sft.astype("float64")
-        # BKGpi shifting
+        #--- pi shifting
+        (_,pi_coun_sft,_,_) = shift_pi(pifile,self.sample_rmf,z,self.ene_trc)
+        pi_sft = np.asarray(pi_coun_sft,dtype=np.float32)
+
+        #--- BKGpi shifting
         if self.bkgpifile_lst is None:
-            bkgpi_coun_sft = np.zeros(len(pi_coun_sft))
+            bkgpi_sft = np.zeros_like(pi_sft,dtype=np.float32)
         else:
-            (bkgpi_chan_sft,bkgpi_coun_sft,bkgpi_chan,bkgpi_coun) = shift_pi(bkgpifile,self.sample_rmf,z,self.ene_trc)
-        bkgpi_sft = bkgpi_coun_sft.astype("float64")
-        # RSP shifting
+            (_,bkgpi_coun_sft,_,_) = shift_pi(bkgpifile,self.sample_rmf,z,self.ene_trc)
+            bkgpi_sft = np.asarray(bkgpi_coun_sft,dtype=np.float32)
+
+        #--- RSP shifting
         rspmat_sft = shift_rsp(arffile,rmffile,z,self.nh_file,nh=nh,ene_trc=self.ene_trc)
         
-        # first energy
-        with fits.open(rmffile) as hdu:
-            mat = hdu["MATRIX"].data
-            ebo = hdu["EBOUNDS"].data
-        arfene_lo = mat["ENERG_LO"]
-        arfene_hi = mat["ENERG_HI"]
-        arfene_ce = (arfene_lo + arfene_hi) / 2
-        arfene_wd = arfene_hi - arfene_lo
-        ene_lo = ebo["E_MIN"]
-        ene_hi = ebo["E_MAX"]
-        ene_ce = (ene_lo + ene_hi) / 2
-        ene_wd = ene_hi - ene_lo
-        arf_sft = project_rspmat(rspmat_sft,ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="MODEL")
-
+        #--- FENE (first energy)
+        arf_sft = project_rspmat(rspmat_sft,self.ENE_LO,self.ENE_HI,self.IENE_LO,self.IENE_HI,proj_axis="MODEL")
         arf_nonzero_mask = (arf_sft!=0)
-        arffene = arfene_ce[arf_nonzero_mask][0]
+        arffene = self.IENE_CE[arf_nonzero_mask][0]
         pi_nonzero_mask = (pi_sft!=0)
-        fene = ene_ce[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1
+        fene = self.ENE_CE[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1
         
-        del hdu["MATRIX"].data, hdu["EBOUNDS"].data  # to clear memory
-
-        # BKGSCAL & EXPOSURE & REGAREA
+        #--- BKGSCAL & EXPOSURE & REGAREA
         if bkgpifile is not None:
             bkgscal = get_bkgscal(pifile,bkgpifile)
         else:

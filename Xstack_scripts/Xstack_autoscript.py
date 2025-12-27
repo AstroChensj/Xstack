@@ -178,7 +178,8 @@ def main():
 		lines = f.readlines()
 	filename_lst = [line.strip() for line in lines if line.strip()]
 	results = Parallel(
-		n_jobs=4,backend="loky"
+		n_jobs=min(10,args.nthreads),
+		backend="loky",
 	)(
 		delayed(read_entry)(filename,same_rmf=args.same_rmf,check_bkg_arf=True) 
 		for filename in tqdm(filename_lst)

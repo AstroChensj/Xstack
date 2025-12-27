@@ -253,15 +253,7 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     """
     pi_lst = np.array(pi_lst)
 
-    """
-    if scal_lst is None:
-        scal_lst = np.ones(pi_lst.shape[0])
-    scal_lst = np.array(scal_lst)
-    """
-
-    # assert pi_lst.shape[0] == scal_lst.shape[0], "pi number and ratio number do not match!"
-    
-    # For spectral counts
+    #--- For spectral counts
     if scal_lst is None:    # source PI
         # We round photon counts in each channel to nearest integer, to approximate Poisson
         # which is necessary to calculate uncertainties
@@ -273,7 +265,7 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     # # NOTE: uncomment below to go back to previous version
     # sum_pi = np.sum(pi_scal_lst, axis=0)
     
-    # For spectral counts uncertainties
+    #--- For spectral counts uncertainties
     # Gaussian error propagation: each channel of `pi_scal_lst` has to have enough photon counts!
     # But this is generally not the case for bkg spectra (scal_lst << 1), so function `add_bkgpi` should be used instead!
     if scal_lst is None:    # source PI
@@ -287,7 +279,7 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
     # pierr_scal_lst = pierr_lst * scal_lst[:,np.newaxis] # see explanations above
     # sum_pierr = np.sqrt(np.sum(pierr_scal_lst**2, axis=0))
     
-    # Write fits file (optional)
+    #--- Write fits file (optional)
     if fits_name is not None:
         hdulist = fits.HDUList()
     
@@ -306,13 +298,13 @@ def add_pi(pi_lst,scal_lst=None,fits_name=None,expo=10,bkg_file=None,rmf_file=No
         hdu_spectrum.header["INSTRUME"] = "STACKED"
         hdu_spectrum.header["EXPOSURE"] = expo
         if bkg_file is not None:
-            hdu_spectrum.header["BACKFILE"] = bkg_file
+            hdu_spectrum.header["BACKFILE"] = os.path.basename(bkg_file)    # we assume all files under the same path for xspec convenience
         hdu_spectrum.header["BACKSCAL"] = 1.0
         hdu_spectrum.header["CORRSCAL"] = 1.0
         if rmf_file is not None:
-            hdu_spectrum.header["RESPFILE"] = rmf_file
+            hdu_spectrum.header["RESPFILE"] = os.path.basename(rmf_file)
         if arf_file is not None:
-            hdu_spectrum.header["ANCRFILE"] = arf_file
+            hdu_spectrum.header["ANCRFILE"] = os.path.basename(arf_file)
         hdu_spectrum.header["AREASCAL"] = 1.0
         hdu_spectrum.header["HDUCLASS"] = "OGIP"
         hdu_spectrum.header["HDUCLAS1"] = "SPECTRUM"

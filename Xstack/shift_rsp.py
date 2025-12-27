@@ -368,7 +368,7 @@ def add_rsp(
 		hdu_matrix.header["TLMIN4"] = 1 # the first channel in the response
 		hdu_matrix.header["EXPOSURE"] = (expo_stacked, "Stacked exposure time [s]")
 		hdu_matrix.header["REGAREA"] = (rega_stacked, "Stacked region area [deg^2]")
-		hdu_matrix.header["ANCRFILE"] = outarf_name     # NOTE: assuming under the same path
+		hdu_matrix.header["ANCRFILE"] = os.path.basename(outarf_name)     # NOTE: assuming under the same path
 		hdu_matrix.header["CREATOR"] = "XSTACK"
 		hdulist.append(hdu_matrix)
 		
