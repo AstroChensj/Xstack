@@ -23,7 +23,7 @@ setup(
     author_email="JohnnyCsj666@gmail.com",
     url="https://github.com/AstroChensj/Xstack.git",
     #packages=find_packages(),
-    packages=["Xstack","Xstack_scripts"],
+    packages=["Xstack","Xstack/utils","Xstack/visual","Xstack/simu","Xstack_scripts"],
     install_requires=[
         "astropy",
         "numpy",
@@ -34,15 +34,15 @@ setup(
         "numba",
         "sfdmap",
         "joblib",
+        "psutil",
     ],
     package_data={
-        "": ["**/tbabs_1e20.txt"],
-        "Xstack": ["fkspec_sh/*.sh","VERSION"],
+        "Xstack": ["data/*.txt","simu/fkspec_sh/*.sh","VERSION"],
         "Xstack_scripts": ["VERSION"]
     },
     entry_points={
         "console_scripts": [
-            "runXstack=Xstack_scripts.Xstack_autoscript:main"
+            "runXstack=Xstack_scripts.Xstack_autoscript:main",
         ]
     },
     cmdclass={'build_py': Copy_VERSION},

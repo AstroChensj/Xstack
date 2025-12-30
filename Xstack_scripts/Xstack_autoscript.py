@@ -68,10 +68,10 @@ If you want to do bootstrap, that is also easy:
 Please see below for the documentation of each argument:
 
 """
-
-# the main module
-from Xstack import Xstack,rsXstack
-# the usual packages
+# Xstack main module
+from Xstack.Xstack import XstackRunner
+from Xstack.config import default_nh_file
+# usual packages
 import numpy as np
 from astropy.io import fits as pyfits
 import fitsio
@@ -83,12 +83,10 @@ import argparse
 import warnings
 from tqdm import tqdm
 
-nh_file = Xstack.default_nh_file
-script_path = os.path.abspath(__file__) # the absolute path of Xstack_autoscript.py
 
 class HelpfulParser(argparse.ArgumentParser):
 	def error(self, message):
-		sys.stderr.write("error: %s\n" % message)
+		sys.stderr.write(f"error: {message}\n")
 		self.print_help()
 		sys.exit(2)
 
@@ -108,12 +106,10 @@ parser.add_argument("--num_bkg_groups", type=int, default=10, help="number of ba
 parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
 parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
 parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
-# below are for bootstrap (either bootstrap or KFold)
-parser.add_argument("--resample_method", type=str, default="None", help="method for performing resampling; 'None': no resampling, 'bootstrap': use bootstrap, 'KFold': use KFold)")
+# below are for bootstrap
+parser.add_argument("--bootstrap", action="store_true", help="activate bootstrap mode")
 parser.add_argument("--num_bootstrap", type=int, default=10, help="number of bootstrap experiments")
 parser.add_argument("--bootstrap_portion", type=float, default=1.0, help="portion of sources to resample in each bootstrap experiment")
-parser.add_argument("--Ksort_filelist", type=str, default="Ksort_filelist.txt", help="name of file storing the sorting value for each source in `filelist`")
-parser.add_argument("--K", type=int, default=4, help="number of groups for KFold")
 
 args = parser.parse_args()
 
@@ -173,7 +169,7 @@ def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 
 
 def main():
-	#--- read files
+	#--- parse input files
 	with open(args.filelist,"r") as f:
 		lines = f.readlines()
 	filename_lst = [line.strip() for line in lines if line.strip()]
@@ -207,96 +203,30 @@ def main():
 	if np.all([bkgfile is None for bkgfile in bkgpifile_lst]):
 		bkgpifile_lst = None
 
-	if args.num_bkg_groups > len(pifile_lst):
-		print("Warning! `Nbkggrp` must be smaller than the number of spectra loaded. `Nbkggrp` is now set to 1.")
-		args.num_bkg_groups = 1
+	data = XstackRunner(
+		pifile_lst=pifile_lst,                          # the PI spectrum list
+		arffile_lst=arffile_lst,                        # the ARF list
+		rmffile_lst=rmffile_lst,                        # the RMF list
+		z_lst=z_lst,                                    # the redshift list
+		bkgpifile_lst=bkgpifile_lst,                    # the bkg PI files list
+		nh_lst=nh_lst,                                  # the Galactic absorption list (optional, in units of 1 cm^{-2})
+		srcid_lst=None,                                 # the source id list (optional)
+		rspwt_method=args.rsp_weight_method,            # method to calculate response weighting factor for each source (recommended: SHP)
+		rspproj_gamma=args.rsp_project_gamma,           # prior photon index for projecting RSP matrix onto the output energy channel
+		int_rng=(args.flux_energy_lo,args.flux_energy_hi), # if `arfscal_method`=`SHP`, choose the range to calculate flux
+		sample_rmf=None,                                # the sample RMF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
+		sample_arf=None,                                # the sample ARF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
+		nh_file=default_nh_file,                        # the Galactic absorption profile (absorption factor vs. energy)
+		Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
+		ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
+		extended=args.extended,                         # extended sources?
+		nthreads=args.nthreads,                         # number of cpus used for RMF shifting
+		bootstrap=True if args.bootstrap else False,	# do single stacking or bootstrap stacking?
+		num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
+		bootstrap_portion=args.bootstrap_portion,       # portion to resample in `bootstrap` method
+		prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+	).run()
 
-
-	if args.resample_method == "None":    # no resampling: single stack
-		data = Xstack.XstackRunner(
-			pifile_lst=pifile_lst,                          # the PI spectrum list
-			arffile_lst=arffile_lst,                        # the ARF list
-			rmffile_lst=rmffile_lst,                        # the RMF list
-			z_lst=z_lst,                                    # the redshift list
-			bkgpifile_lst=bkgpifile_lst,                    # the bkg PI files list
-			nh_lst=nh_lst,                                  # the Galactic absorption list (optional, in units of 1 cm^{-2})
-			srcid_lst=None,                                 # the source id list (optional)
-			rspwt_method=args.rsp_weight_method,            # method to calculate response weighting factor for each source (recommended: SHP)
-			rspproj_gamma=args.rsp_project_gamma,           # prior photon index for projecting RSP matrix onto the output energy channel
-			int_rng=(args.flux_energy_lo, args.flux_energy_hi), # if `arfscal_method`=`SHP`, choose the range to calculate flux
-			sample_rmf=None,                                # the sample RMF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			sample_arf=None,                                # the sample ARF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
-			Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
-			ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
-			extended=args.extended,                         # extended sources?
-			nthreads=args.nthreads,                         # number of cpus used for RMF shifting
-			prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
-		).run()
-
-
-	elif args.resample_method == "bootstrap":     # resampling, using bootstrap
-		data = rsXstack.resample_XstackRunner(
-			pifile_lst=pifile_lst,                          # the PI spectrum list
-			arffile_lst=arffile_lst,                        # the ARF list
-			rmffile_lst=rmffile_lst,                        # the RMF list
-			z_lst=z_lst,                                    # the redshift list
-			bkgpifile_lst=bkgpifile_lst,                    # the bkg PI spectrum list
-			nh_lst=nh_lst,                                  # the Galactic absorption list (optional, in units of 1 cm^{-2})
-			srcid_lst=None,                                 # the source id list (optional)
-			rspwt_method=args.rsp_weight_method,            # method to calculate response weighting factor for each source (recommended: SHP)
-			rspproj_gamma=args.rsp_project_gamma,           # prior photon index for projecting RSP matrix onto the output energy channel
-			int_rng=(args.flux_energy_lo, args.flux_energy_hi), # if `arfscal_method`=`SHP`, choose the range to calculate flux
-			sample_rmf=None,                                # the sample RMF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			sample_arf=None,                                # the sample ARF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
-			Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
-			ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
-			extended=args.extended,                         # extended sources?
-			nthreads=args.nthreads,                         # number of cpus used for RMF shifting
-			resample_method=args.resample_method,           # resample method: `bootstrap` or `KFold`
-			num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
-			bootstrap_portion=args.bootstrap_portion,       # portion to resample in `bootstrap` method
-			prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
-		).run()
-
-
-	elif args.resample_method == "KFold":     # resampling, using K-Fold
-		Ksort_lst = []
-		with open(args.Ksort_filelist) as f:
-				lines = f.readlines()
-		for line in lines:
-				Ksort_lst.append(float(line.strip("\n")))
-		Ksort_lst = np.array(Ksort_lst)
-		assert len(Ksort_lst)==len(pifile_lst), "`Ksort_filelist` must have same length as `pifile_lst`!"
-
-		data = rsXstack.resample_XstackRunner(
-			pifile_lst=pifile_lst,                          # the PI spectrum list
-			arffile_lst=arffile_lst,                        # the ARF list
-			rmffile_lst=rmffile_lst,                        # the RMF list
-			z_lst=z_lst,                                    # the redshift list
-			bkgpifile_lst=bkgpifile_lst,                    # the bkg PI spectrum list
-			nh_lst=nh_lst,                                  # the Galactic absorption list (optional, in units of 1 cm^{-2})
-			srcid_lst=None,                                 # the source id list (optional)
-			rspwt_method=args.rsp_weight_method,            # method to calculate response weighting factor for each source (recommended: SHP)
-			rspproj_gamma=args.rsp_project_gamma,           # prior photon index for projecting RSP matrix onto the output energy channel
-			int_rng=(args.flux_energy_lo, args.flux_energy_hi), # if `arfscal_method`=`SHP`, choose the range to calculate flux
-			sample_rmf=None,                                # the sample RMF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			sample_arf=None,                                # the sample ARF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)
-			nh_file=nh_file,                                # the Galactic absorption profile (absorption factor vs. energy)
-			Nbkggrp=args.num_bkg_groups,                    # the number of background groups to calculate uncertainty of background
-			ene_trc=args.ene_trc,                           # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
-			extended=args.extended,                         # extended sources?
-			nthreads=args.nthreads,                         # number of cpus used for RMF shifting
-			resample_method=args.resample_method,           # resample method: `bootstrap` or `KFold`
-			K=args.K,                                       # number of subgroups to divide the original sample into in `KFold` method
-			Ksort_lst=Ksort_lst,                            # value list  used to sort the original sample in `KFold` method
-			prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
-		).run()
-
-
-	else:
-		raise Exception("Available `resample_method`: `None`, `bootstrap`, or `KFold`!")
 
 
 if __name__ == "__main__":

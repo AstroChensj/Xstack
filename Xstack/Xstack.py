@@ -9,27 +9,20 @@ Main wrapper module for all spectral shifting+stacking procedures
 :Email:     JohnnyCsj666@gmail.com
 
 """
-from .shift_pi import *
-from .shift_rsp import *
-from .misc import fene_fits
 import numpy as np
 from astropy.io import fits
-from joblib import Parallel, delayed
+from joblib import Parallel,delayed
 from tqdm import tqdm
-import gc
 import os
 import time
-default_nh_file = os.path.join(os.path.dirname(__file__), "tbabs_1e20.txt")
-version_file = os.path.join(os.path.dirname(__file__), "VERSION")
+from Xstack.utils.pi import shift_pi,get_bkgscal,get_expo,get_rega,calc_pi_error,calc_bkgpi_error,write_pi,write_bkgpi
+from Xstack.utils.rsp import shift_rsp,get_prob,compute_rspwt,rescale_rspmat,project_rspmat,extract_arf_rmf_from_rspmat,get_tlmin_from_header,write_arf,write_rmf
+from Xstack.utils.fene import write_fene
+from Xstack.utils.random import calc_bootstrap_weights
+from Xstack.utils.logger import get_logger,get_ram_gb
+from Xstack.config import VERSION,LASTUPDATE
 
-with open(version_file) as f:
-    lines = f.readlines()
-    version = lines[0].strip()
-    lastupdate = lines[1].strip()
 
-##############################################
-############# MAIN FUNCTION ##################
-##############################################
 class XstackRunner:
     """
     X-ray Spectral Shifting & Stacking.
@@ -55,7 +48,9 @@ class XstackRunner:
             bkgpifile_lst=None,nh_lst=None,srcid_lst=None,
             rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),
             sample_rmf=None,sample_arf=None,nh_file=None,
-            Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,prefix="./results/stacked_",
+            Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,
+            bootstrap=False,num_bootstrap=10,bootstrap_portion=1.0,
+            prefix="./results/stacked_",
         ):
         """
         Parameters
@@ -125,6 +120,13 @@ class XstackRunner:
             Prefix for output stacked PI, BKGPI, ARF, and RMF files. 
             Defaults to './results/stacked_'
         """
+        #--- create output directory and define logger
+        self.outdir = os.path.dirname(prefix)
+        if self.outdir != "":
+            os.makedirs(self.outdir,exist_ok=True)
+        self.logger_name = f"{prefix}runXstack.log"
+        self.main_logger = get_logger(self.logger_name)
+
         #--- basic setup
         self.pifile_lst = pifile_lst
         self.arffile_lst = arffile_lst
@@ -152,27 +154,18 @@ class XstackRunner:
             self.sample_arf = sample_arf
         self.nh_file = nh_file
         if Nbkggrp > len(pifile_lst):
-            print("Warning! `Nbkggrp` must be smaller than the number of spectra loaded. `Nbkggrp` is now set to 1.")
+            self.main_logger.warning("Warning! `Nbkggrp` must be smaller than the number of spectra loaded. `Nbkggrp` is now set to 1.")
             self.Nbkggrp = 1
         else:
             self.Nbkggrp = Nbkggrp
         self.ene_trc = ene_trc
         self.extended = extended
         self.nthreads = nthreads
-
-        #--- creating output directory
-        self.outdir = os.path.dirname(prefix)
-        if self.outdir != "":
-            os.makedirs(self.outdir,exist_ok=True)
-
-        self.o_pi_name = f"{prefix}pi.fits"
-        self.o_bkgpi_name = f"{prefix}bkgpi.fits"
-        self.o_arf_name = f"{prefix}arf.fits"
-        self.o_rmf_name = f"{prefix}rmf.fits"
-        self.o_fene_name = f"{prefix}fene.fits"
+        self.Nsrc = len(pifile_lst)
 
         #--- read ARF energy edges and RMF energy edges
         ##--- NOTE: this assumes RMF energies are identical across the sample (i.e., from the same instrument) !!!
+        self.main_logger.info("Please ensure all spectra share the same energy grids!")
         with fits.open(self.sample_rmf) as hdu:
             mat = hdu["MATRIX"].data
             ebo = hdu["EBOUNDS"].data
@@ -184,52 +177,115 @@ class XstackRunner:
         self.IENE_HI = mat["ENERG_HI"]
         self.IENE_CE = (self.IENE_LO + self.IENE_HI) / 2
         self.IENE_WD = self.IENE_HI - self.IENE_LO
+        self.F_CHAN_0 = get_tlmin_from_header(self.sample_rmf)
+        self.PROB = get_prob(mat,ebo,self.F_CHAN_0)
+        self.int_flg = (self.ENE_CE>self.int_rng[0]) & (self.ENE_CE<self.int_rng[-1])
 
-        #--- creating empty lists to store results
-        self.pi_sft_lst = []
-        self.rspmat_sft_lst = []
-        self.bkgpi_sft_lst = []
+        #--- read PI for channel
+        with fits.open(self.pifile_lst[0]) as hdu:
+            data = hdu["SPECTRUM"].data
+        self.CHANNEL = data["CHANNEL"]
 
-        self.bkgscal_lst = []
-        self.expo_lst = []
-        self.rega_lst = []
-        self.arffene_lst = []
-        self.fene_lst = []
+        #--- bootstrap setting
+        self.bootstrap = bootstrap
+        if self.bootstrap:  # if you prefer to do bootstrap
+            self.num_bootstrap = num_bootstrap
+            self.bootstrap_portion = bootstrap_portion
+            rng = np.random.default_rng(seed=self.num_bootstrap)
+            self.bwt_lst_rlz = [
+                calc_bootstrap_weights(self.Nsrc,self.bootstrap_portion,rng)
+                for _ in range(self.num_bootstrap)
+            ]   # realizations of bootstrap weight list, (num_bootstrap, Nsrc) 
+        else:   # if you prefer not to do bootstrap, just direct sum
+            self.num_bootstrap = 1  # set num_bootstrap to 1
+            self.bwt_lst_rlz = [np.ones(self.Nsrc,dtype=np.int64)]  # and bootstrap weight list to 1s
+        
+        #--- source id list
+        self.srcid_lst_rlz = [np.repeat(self.srcid_lst,self.bwt_lst_rlz[k]) for k in range(self.num_bootstrap)]
 
+        #--- create empty arrays to store results
+        ##--- NOTE: `lst` means list for sources (Nsrc), `rlz` means realization for bootstrap
+        self.bkgscal_lst_rlz = [[] for _ in range(self.num_bootstrap)]      # realizations of bkgscal list, (num_bootstrap, Nsrc)
+        self.rspwt_lst_rlz = [[] for _ in range(self.num_bootstrap)]        # realizations of response weight list, (same)
+        self.expo_lst_rlz = [[] for _ in range(self.num_bootstrap)]         # realizations of exposure list, (same)
+        self.rega_lst_rlz = [[] for _ in range(self.num_bootstrap)]         # realizations of region geometric area list, (same)
+        self.arffene_lst_rlz = [[] for _ in range(self.num_bootstrap)]      # realizations of arf first energy list, (same)
+        self.fene_lst_rlz = [[] for _ in range(self.num_bootstrap)]         # realizations of pi first energy list, (same)
+        self.pi_totcts_lst_rlz = [[] for _ in range(self.num_bootstrap)]    # realizations of per-source total spectral counts (same)
+        self.bkgpi_totcts_lst_rlz = [[] for _ in range(self.num_bootstrap)] # realizations of per-source total scaled bkg counts (same)
+        self.bkgpi_sft_lst_rlz = [[] for _ in range(self.num_bootstrap)]    # for bkg uncertainty estimation, (num_bootstrap, Nsrc, Nchan)
+        ##--- below are for accumulating
+        self.pi_stk_rlz = [np.zeros_like(self.ENE_CE,dtype=np.float64) for _ in range(self.num_bootstrap)]      # realizations of stacked pi spectrum (num_bootstrap, Nchan)
+        self.bkgpi_stk_rlz = [np.zeros_like(self.ENE_CE,dtype=np.float64) for _ in range(self.num_bootstrap)]   # realizations of stacked bkgpi spectrum (same)
+        self.rspmat_stk_rlz = [np.zeros_like(self.PROB,dtype=np.float64) for _ in range(self.num_bootstrap)]    # realizations of stacked full response (num_bootstrap, Niene, Nene)
+        # ** np.float 64 is very important for LMN mode where rspmat value is very small **
+        ##--- below will be overwritten later, so set to None
+        self.pierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
+        self.bkgpierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
+        self.specresp_stk_rlz = [None for _ in range(self.num_bootstrap)]   # realizations of stacked ARF effective area curve, (num_bootstrap, Niene)
+        self.prob_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked RMF probability matrix, (num_bootstrap, Niene, Nene)
+        self.rspnorm_rlz = [None for _ in range(self.num_bootstrap)]        # realizations of stacked response norm (num_bootstrap,)
+        self.expo_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked exposure (num_bootstrap,)
+        self.rega_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked region area (num_bootstrap,)
+
+        #--- output name
+        if self.bootstrap:
+            self.o_pi_name_rlz = [f"{prefix}{idx:0{len(str(self.num_bootstrap))}d}_pi.fits" for idx in range(self.num_bootstrap)]
+            self.o_bkgpi_name_rlz = [f"{prefix}{idx:0{len(str(self.num_bootstrap))}d}_bkgpi.fits" for idx in range(self.num_bootstrap)]
+            self.o_arf_name_rlz = [f"{prefix}{idx:0{len(str(self.num_bootstrap))}d}_arf.fits" for idx in range(self.num_bootstrap)]
+            self.o_rmf_name_rlz = [f"{prefix}{idx:0{len(str(self.num_bootstrap))}d}_rmf.fits" for idx in range(self.num_bootstrap)]
+            self.o_fene_name_rlz = [f"{prefix}{idx:0{len(str(self.num_bootstrap))}d}_fene.fits" for idx in range(self.num_bootstrap)]
+        else:
+            self.o_pi_name_rlz = [f"{prefix}pi.fits"]
+            self.o_bkgpi_name_rlz = [f"{prefix}bkgpi.fits"]
+            self.o_arf_name_rlz = [f"{prefix}arf.fits"]
+            self.o_rmf_name_rlz = [f"{prefix}rmf.fits"]
+            self.o_fene_name_rlz = [f"{prefix}fene.fits"]
+        
+       
 
     def run(self):
         """
-        Shift all PIs + bkgPIs + ARFs + RMFs to rest-frame in one go.
+        Shift all PIs + bkgPIs + ARFs + RMFs to rest-frame and stack in one go.
+
+        Returns
+        -------
         """
-        print("#######################################################")
-        print("################ Welcome to Xstack! ###################")
-        print("#######################################################")
-        print(f"Version: {version}")
-        print(f"Last updated: {lastupdate}")
-        print("******************* Input Summary *********************")
-        print(f"Number of sources: {len(self.pifile_lst)}")
-        print(f"Redshift range: {np.min(self.z_lst):.3f} -- {np.max(self.z_lst):.3f}")
-        print(f"NH range: {np.min(self.nh_lst)} -- {np.max(self.nh_lst)}")
-        print(f"NH file: {self.nh_file if self.nh_file is not None else 'None'}")
-        print(f"RSP weighting method: {self.rspwt_method}")
-        print(f"RSP projection gamma: {self.rspproj_gamma}")
-        print(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV (used only in `SHP` mode)")
-        print(f"ARF Truncation energy: {self.ene_trc} keV")
-        print(f"Source type: {'extended sources' if self.extended else 'point sources'}")
-        print(f"Number of CPUs used for shifting RMF: {self.nthreads}")
-        print(f"Number of background groups: {self.Nbkggrp}")
-        print(f"Output directory: {self.outdir}")
-        print(f"Output PI spectrum (base)name: {self.o_pi_name}")
-        print(f"Output bkg PI spectrum (base)name: {self.o_bkgpi_name}")
-        print(f"Output ARF (base)name: {self.o_arf_name}")
-        print(f"Output RMF (base)name: {self.o_rmf_name}")
-        print(f"Output FENE (base)name: {self.o_fene_name}")
-        print("*******************************************************")
+        self.main_logger.info("#######################################################")
+        self.main_logger.info("################ Welcome to Xstack! ###################")
+        self.main_logger.info("#######################################################")
+        self.main_logger.info(f"Version: {VERSION}")
+        self.main_logger.info(f"Last updated: {LASTUPDATE}")
+        self.main_logger.info("******************* Input Summary *********************")
+        self.main_logger.info(f"Number of sources: {len(self.pifile_lst)}")
+        self.main_logger.info(f"Redshift range: {np.min(self.z_lst):.3f} -- {np.max(self.z_lst):.3f}")
+        self.main_logger.info(f"NH range: {np.min(self.nh_lst)} -- {np.max(self.nh_lst)}")
+        self.main_logger.info(f"NH file: {self.nh_file if self.nh_file is not None else 'None'}")
+        self.main_logger.info(f"RSP weighting method: {self.rspwt_method}")
+        self.main_logger.info(f"RSP projection gamma: {self.rspproj_gamma}")
+        self.main_logger.info(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV (used only in `SHP` mode)")
+        self.main_logger.info(f"ARF Truncation energy: {self.ene_trc} keV")
+        self.main_logger.info(f"Source type: {'extended sources' if self.extended else 'point sources'}")
+        self.main_logger.info(f"Number of CPUs used for shifting RMF: {self.nthreads}")
+        self.main_logger.info(f"Number of background groups: {self.Nbkggrp}")
+        if self.bootstrap:
+            self.main_logger.info(f"Bootstrap: ON")
+            self.main_logger.info(f"Number of realizations: {self.num_bootstrap}")
+            self.main_logger.info(f"Fraction of sources to participate bootstrap: {self.bootstrap_portion}")
+        else:
+            self.main_logger.info(f"Bootstrap: OFF")
+        self.main_logger.info(f"Output directory: {self.outdir}")
+        self.main_logger.info(f"Output PI spectrum (base)name: {self.o_pi_name_rlz[0]}")
+        self.main_logger.info(f"Output bkg PI spectrum (base)name: {self.o_bkgpi_name_rlz[0]}")
+        self.main_logger.info(f"Output ARF (base)name: {self.o_arf_name_rlz[0]}")
+        self.main_logger.info(f"Output RMF (base)name: {self.o_rmf_name_rlz[0]}")
+        self.main_logger.info(f"Output FENE (base)name: {self.o_fene_name_rlz[0]}")
+        self.main_logger.info("*******************************************************")
         
-        #--- SHIFTING
-        print("")
-        print("******************* Shifting ... **********************")
-        N = len(self.srcid_lst)
+        #--- rest-frame shifting
+        ##--- NOTE: we shift all sources regardless of bootstrap to save run time
+        self.main_logger.info("")
+        self.main_logger.info("******************* Shifting ... **********************")
         t0 = time.time()
         results = Parallel(
             n_jobs=self.nthreads,
@@ -238,81 +294,152 @@ class XstackRunner:
             # return_as="generator",
             # pre_dispatch=self.nthreads,
         )(
-            delayed(self.process_entry)(i)
-            for i in tqdm(range(N))
+            delayed(self.run_single_source)(i)
+            for i in tqdm(range(self.Nsrc))
         )
+        peak_rss_sft = get_ram_gb() # peak RAM usage for shifting
+        self.main_logger.info(f"Peak RAM usage during shifting: {peak_rss_sft:.1f} GB")
+        self.main_logger.info(f"Total time used for shifting: {time.time()-t0} s")
+        
+        #--- stacking
+        self.main_logger.info("")
+        self.main_logger.info("******************* Stacking ... **********************")
+        peak_rss_stk = 0.0  # peak RAM usage for stacking
+        t0_all = time.time()
+        ##--- for each realization, we randomly draw sample from ** shifted pi & rsp **
+        for k in range(self.num_bootstrap):
+            t0 = time.time()
+            self.main_logger.info("")
+            self.main_logger.info(f"=== Realization {k:0{len(str(self.num_bootstrap))}d} ===")
+            for i,(pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,arffene,fene,expo,rega) in enumerate(tqdm(results,total=self.Nsrc,desc="stacking")):
+                # NOTE: bwt_src: how many times the i-th source appears in the k-th bootstrap realization
+                bwt_src = self.bwt_lst_rlz[k][i]
+                ##--- stacking pi & rsp
+                self.pi_stk_rlz[k] += pi_sft * bwt_src
+                self.bkgpi_stk_rlz[k] += bkgpi_sft * bkgscal * bwt_src
+                self.rspmat_stk_rlz[k] += rspmat_sft * rspwt * bwt_src
+                ##--- saving meta-data for later renormalization
+                self.bkgscal_lst_rlz[k].append(bkgscal)                         # (num_bootstrap, Nsrc)
+                self.rspwt_lst_rlz[k].append(rspwt)                             # (same)
+                self.expo_lst_rlz[k].append(expo)                               # (same)
+                self.rega_lst_rlz[k].append(rega)                               # (same)
+                self.arffene_lst_rlz[k].append(arffene)                         # (same)
+                self.fene_lst_rlz[k].append(fene)                               # (same)
+                self.pi_totcts_lst_rlz[k].append(np.sum(pi_sft))                # (same)
+                self.bkgpi_totcts_lst_rlz[k].append(np.sum(bkgpi_sft*bkgscal))  # (same)
+                self.bkgpi_sft_lst_rlz[k].append(bkgpi_sft)                     # (num_bootstrap, Nsrc, Nchan)
+                ##--- record ram usage
+                rss_stk = get_ram_gb()
+                peak_rss_stk = max(peak_rss_stk,rss_stk)
+            self.bkgscal_lst_rlz[k] = np.array(self.bkgscal_lst_rlz[k])
+            self.bkgpi_sft_lst_rlz[k] = np.array(self.bkgpi_sft_lst_rlz[k])
+            self.rspwt_lst_rlz[k] = np.array(self.rspwt_lst_rlz[k])
+            self.expo_lst_rlz[k] = np.array(self.expo_lst_rlz[k])
+            self.rega_lst_rlz[k] = np.array(self.rega_lst_rlz[k])
+            self.arffene_lst_rlz[k] = np.array(self.arffene_lst_rlz[k])
+            self.fene_lst_rlz[k] = np.array(self.fene_lst_rlz[k])
+            self.pi_totcts_lst_rlz[k] = np.array(self.pi_totcts_lst_rlz[k])
+            self.bkgpi_totcts_lst_rlz[k] = np.array(self.bkgpi_totcts_lst_rlz[k])
+            self.main_logger.info(f"Peak RAM usage during stacking (realization {k:0{len(str(self.num_bootstrap))}d}): {peak_rss_stk:.1f} GB")
+            self.main_logger.info(f"Total time used for stacking (realization {k:0{len(str(self.num_bootstrap))}d}): {time.time()-t0} s")
+        self.main_logger.info("----")
+        self.main_logger.info(f"Total time used for all stacking: {time.time()-t0_all} s")
 
-        print("collecting results ...")
-        for pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene in tqdm(results,total=N,desc="collecting"):
-            self.pi_sft_lst.append(pi_sft)
-            self.bkgpi_sft_lst.append(bkgpi_sft)
-            self.rspmat_sft_lst.append(rspmat_sft)
-            self.bkgscal_lst.append(bkgscal)
-            self.expo_lst.append(expo)
-            self.rega_lst.append(rega)
-            self.arffene_lst.append(arffene)
-            self.fene_lst.append(fene)
-
-        t1 = time.time()
-        print(f"Total time used for shifting: {t1-t0} s.")
-
-        #--- STACKING
-        print("")
-        print("******************* Stacking ... **********************")
+        #--- PI error calculation
+        self.main_logger.info("")
+        self.main_logger.info("************** PI error calculation ... ***************")
         t0 = time.time()
-        expo = np.sum(self.expo_lst)
-        print("***************** Stacking PI ... *********************")
-        pi_stk,pierr_stk = add_pi(
-            self.pi_sft_lst,fits_name=self.o_pi_name,expo=expo,
-            bkg_file=self.o_bkgpi_name,rmf_file=self.o_rmf_name,arf_file=self.o_arf_name,
-        )
-        print("**************** Stacking BKGPI ... *******************")
-        bkgpi_stk,bkgpierr_stk = add_bkgpi(
-            self.bkgpi_sft_lst,bkgscal_lst=self.bkgscal_lst,
-            Ngrp=self.Nbkggrp,fits_name=self.o_bkgpi_name,expo=expo,
-        )
-        print("***************** Stacking RSP ... ********************")
-        arf_stk, rmf_stk, expo_stacked, rega_stacked = add_rsp(
-            self.rspmat_sft_lst,self.pi_sft_lst,self.z_lst,bkgpi_lst=self.bkgpi_sft_lst,
-            bkgscal_lst=self.bkgscal_lst,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
-            expo_lst=self.expo_lst,int_rng=self.int_rng,rspwt_method=self.rspwt_method,rspproj_gamma=self.rspproj_gamma,
-            extended=self.extended,rega_lst=self.rega_lst,
-            outarf_name=self.o_arf_name,sample_arf=self.sample_arf,srcid_lst=self.srcid_lst,outrmf_name=self.o_rmf_name,
-            sample_rmf=self.sample_rmf
-        )
-        t1 = time.time()
-        print(f"Total time used for stacking: {t1-t0} s.")
-        ## Update header of stacked PI
-        fits.setval(self.o_pi_name,ext=1,keyword="EXPOSURE",value=expo_stacked,comment="Stacked exposure time [s]")
-        fits.setval(self.o_pi_name,ext=1,keyword="REGAREA",value=rega_stacked,comment="Stacked region area [deg^2]")
-        fits.setval(self.o_bkgpi_name,ext=1,keyword="EXPOSURE",value=expo_stacked,comment="Stacked exposure time [s]")
-        fits.setval(self.o_bkgpi_name,ext=1,keyword="REGAREA",value=rega_stacked,comment="Stacked region area [deg^2]")
-        
-        if self.o_fene_name is not None:
-            fene_fits(self.srcid_lst,self.arffene_lst,self.fene_lst,self.o_fene_name)
+        for k in range(self.num_bootstrap):
+            ##--- for src pi
+            self.pi_stk_rlz[k],self.pierr_stk_rlz[k] = calc_pi_error(self.pi_stk_rlz[k]) # update pi_stk to integer, and calculate pierr_stk
+            ##--- for bkg pi
+            self.bkgpi_stk_rlz[k],self.bkgpierr_stk_rlz[k] = calc_bkgpi_error(self.bkgpi_sft_lst_rlz[k],self.bkgscal_lst_rlz[k],self.Nbkggrp)
+        self.main_logger.info(f"Total time used for PI error calculation: {time.time()-t0} s.")
 
-        del self.rspmat_sft_lst # to clear memory
+        #--- response renormalization and RMF&ARF extraction
+        self.main_logger.info("")
+        self.main_logger.info("************** Extracting ARF & RMF ... ***************")
+        t0 = time.time()
+        for k in range(self.num_bootstrap):
+            ##--- renormalization
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k] = rescale_rspmat(
+                self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
+                expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
+                rspwt_method=self.rspwt_method,extended=self.extended,
+            )
+            ##--- extract ARF & RMF from the stacked full response
+            self.specresp_stk_rlz[k],self.prob_stk_rlz[k] = extract_arf_rmf_from_rspmat(self.rspmat_stk_rlz[k])
+        self.main_logger.info(f"Total time used for ARF & RMF extraction: {time.time()-t0} s.")
 
-        print("")
-        print(f"#######################################################")
-        print(f"########## Stacking {len(self.srcid_lst)} spectra completed! ###########")
-        print(f"#######################################################")
-        print(f"Stacked PI spectrum saved to: {self.o_pi_name}")
-        print(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_name}")
-        print(f"Stacked ARF saved to: {self.o_arf_name}")
-        print(f"Stacked RMF saved to: {self.o_rmf_name}")
-        if self.o_fene_name is not None:
-            print(f"Stacked FENE saved to: {self.o_fene_name}")
-        print("")
-        print(f"# NOTE: the output stacked spectra have {{BACK,AREA,CORR}}SCAL=1, even though the inputs have different ratios. This is because these information have already gone into the background spectrum by scaling it.")
-        print("")
+        #--- finally, write fits files
+        self.main_logger.info("")
+        self.main_logger.info("****************** Saving files ... *******************")
+        for k in range(self.num_bootstrap):
+            write_pi(
+                self.CHANNEL,self.pi_stk_rlz[k],pierr=self.pierr_stk_rlz[k],pi_name=self.o_pi_name_rlz[k],
+                expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],bkgpi_name=self.o_bkgpi_name_rlz[k],rmf_name=self.o_rmf_name_rlz[k],arf_name=self.o_arf_name_rlz[k],
+            )
+            write_bkgpi(
+                self.CHANNEL,self.bkgpi_stk_rlz[k],bkgpierr=self.bkgpierr_stk_rlz[k],bkgpi_name=self.o_bkgpi_name_rlz[k],
+                expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],
+            )
+            write_arf(
+                self.IENE_LO,self.IENE_HI,self.specresp_stk_rlz[k],arf_name=self.o_arf_name_rlz[k],
+                detchans=len(self.CHANNEL),expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method=self.rspwt_method,rspnorm=self.rspnorm_rlz[k],
+                srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],pi_totcts_lst=self.pi_totcts_lst_rlz[k],bkgpi_totcts_lst=self.bkgpi_totcts_lst_rlz[k],flg=self.int_flg,
+            )
+            write_rmf(
+                self.CHANNEL,self.ENE_LO,self.ENE_HI,self.IENE_LO,self.IENE_HI,self.prob_stk_rlz[k],rmf_name=self.o_rmf_name_rlz[k],
+                expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method=self.rspwt_method,
+                srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],arf_name=self.o_arf_name_rlz[k],
+            )
+            write_fene(self.srcid_lst_rlz[k],self.arffene_lst_rlz[k],self.fene_lst_rlz[k],self.o_fene_name_rlz[k])
+            
+        #--- generate summary log
+        self.main_logger.info("")
+        self.main_logger.info(f"#######################################################")
+        self.main_logger.info(f"########## Stacking {self.Nsrc} spectra completed! ###########")
+        self.main_logger.info(f"#######################################################")
+        if self.bootstrap:
+            self.main_logger.info(f"Stacked PI spectrum saved to: {self.o_pi_name_rlz[0]} --- {self.o_pi_name_rlz[-1]}")
+            self.main_logger.info(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_name_rlz[0]} --- {self.o_bkgpi_name_rlz[-1]}")
+            self.main_logger.info(f"Stacked ARF saved to: {self.o_arf_name_rlz[0]} --- {self.o_arf_name_rlz[-1]}")
+            self.main_logger.info(f"Stacked RMF saved to: {self.o_rmf_name_rlz[0]} --- {self.o_rmf_name_rlz[-1]}")
+            self.main_logger.info(f"Stacked FENE saved to: {self.o_fene_name_rlz[0]} --- {self.o_fene_name_rlz[-1]}")
+        else:
+            self.main_logger.info(f"Stacked PI spectrum saved to: {self.o_pi_name_rlz[0]}")
+            self.main_logger.info(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_name_rlz[0]}")
+            self.main_logger.info(f"Stacked ARF saved to: {self.o_arf_name_rlz[0]}")
+            self.main_logger.info(f"Stacked RMF saved to: {self.o_rmf_name_rlz[0]}")
+            self.main_logger.info(f"Stacked FENE saved to: {self.o_fene_name_rlz[0]}")
+        self.main_logger.info("")
+        self.main_logger.info(f"# NOTE: the output stacked spectra have {{BACK,AREA,CORR}}SCAL=1, even though the inputs have different ratios. This is because these information have already gone into the background spectrum by scaling it.")
+        self.main_logger.info("")
+        self.main_logger.info("****** Response weighting factor for each source ******")
+        self.main_logger.info(f"Your sources are {'extended sources' if self.extended else 'point sources'}.")
+        if self.rspwt_method == "SHP":
+            self.main_logger.info("`SHP` mode: assuming all sources have similar spectral shape, and weights calculated as COUNTS/ARF (normalized). This gives the most robust estimate of average spectral shape, but the y-axis of stacked spectrum would not carry physical meaning.")
+        elif self.rspwt_method == "FLX":
+            self.main_logger.info(f"`FLX` mode: assuming all sources have similar spectral shape + flux [{'erg/cm^2/s/deg^2' if self.extended else 'erg/cm^2/s'}], and weights calculated as {'EXPOSURE*REGAREA' if self.extended else 'EXPOSURE'}. Spectral shape may be biased if fluxes vary significantly among the sample. The y-axis of stacked spectrum gives the average flux.")
+        elif self.rspwt_method == "LMN":
+            self.main_logger.info(f"`LMN` mode: assuming all sources have similar spectral shape + luminosity [{'erg/s/deg^2' if self.extended else 'erg/s'}], and weights calculated as {'EXPOSURE*REGAREA/DISTANCE**2' if self.extended else 'EXPOSURE/DISTANCE**2'}. Spectral shape may be biased if luminosities vary significantly among the sample. The y-axis of stacked spectrum gives the average luminosity, divided by 1e60.")
+        self.main_logger.info(f"Below is your response weighting factor list under `{self.rspwt_method}` mode (showing 1st realization only):")
+        self.main_logger.info(self.rspwt_lst_rlz[0])
+        if self.bootstrap:
+            self.main_logger.info(f"Full list can be seen in the `WEIGHT` extension of the output ARF file: {self.o_arf_name_rlz[0]} --- {self.o_arf_name_rlz[-1]}")
+        else:
+            self.main_logger.info(f"Full list can be seen in the `WEIGHT` extension of the output ARF file: {self.o_arf_name_rlz[0]}")
+        self.main_logger.info("*******************************************************")
+
+        print(f"Finished. Please check {self.logger_name} for detailed log.")
         
-        return pi_stk, pierr_stk, bkgpi_stk, bkgpierr_stk, arf_stk, rmf_stk
+        return self.pi_stk_rlz,self.pierr_stk_rlz,self.bkgpi_stk_rlz,self.bkgpierr_stk_rlz,self.specresp_stk_rlz,self.prob_stk_rlz
     
 
-    ###### internal function #####
-    def process_entry(self,i):
-
+    def run_single_source(self,i):
+        """
+        
+        """
         pifile = self.pifile_lst[i]
         if self.bkgpifile_lst is not None:
             bkgpifile = self.bkgpifile_lst[i]
@@ -322,37 +449,49 @@ class XstackRunner:
         rmffile = self.rmffile_lst[i]
         z = self.z_lst[i]
         nh = self.nh_lst[i]
+        expo = get_expo(pifile)
+        rega = get_rega(pifile)
 
-        #--- pi shifting
-        (_,pi_coun_sft,_,_) = shift_pi(pifile,self.sample_rmf,z,self.ene_trc)
-        pi_sft = np.asarray(pi_coun_sft,dtype=np.float32)
+        #--- shifting pi to rest-frame
+        (_,pi_sft,_,_) = shift_pi(
+            pifile,z,
+            ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,ene_ce=self.ENE_CE,ene_wd=self.ENE_WD,rmf_file=self.sample_rmf,
+            ene_trc=self.ene_trc,
+        )
 
-        #--- BKGpi shifting
-        if self.bkgpifile_lst is None:
-            bkgpi_sft = np.zeros_like(pi_sft,dtype=np.float32)
+        #--- shifting bkgpi to rest-frame
+        if self.bkgpifile_lst is not None:
+            (_,bkgpi_sft,_,_) = shift_pi(
+                bkgpifile,z,
+                ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,ene_ce=self.ENE_CE,ene_wd=self.ENE_WD,rmf_file=self.sample_rmf,
+                ene_trc=self.ene_trc)
+            bkgscal = get_bkgscal(pifile,bkgpifile)
         else:
-            (_,bkgpi_coun_sft,_,_) = shift_pi(bkgpifile,self.sample_rmf,z,self.ene_trc)
-            bkgpi_sft = np.asarray(bkgpi_coun_sft,dtype=np.float32)
+            bkgpi_sft = np.zeros_like(pi_sft,dtype=np.float32)
+            bkgscal = 1
 
-        #--- RSP shifting
-        rspmat_sft = shift_rsp(arffile,rmffile,z,self.nh_file,nh=nh,ene_trc=self.ene_trc)
+        #--- shifting full response (arf*rmf) to rest-frame
+        rspmat_sft = shift_rsp(
+            arffile,rmffile,z,
+            nh_file=self.nh_file,nh=nh,ene_trc=self.ene_trc
+        )
+        rsp1d_sft = project_rspmat(
+            rspmat_sft,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
+            proj_axis="CHANNEL",gamma=self.rspproj_gamma,
+        )
+        rspwt = compute_rspwt(
+            rsp1d_sft,pi_sft,z,bkgpi=bkgpi_sft,bkgscal=bkgscal,expo=expo,ene_wd=self.ENE_WD,flg=self.int_flg,
+            rspwt_method=self.rspwt_method,extended=self.extended,rega=rega,
+        )
         
-        #--- FENE (first energy)
-        arf_sft = project_rspmat(rspmat_sft,self.ENE_LO,self.ENE_HI,self.IENE_LO,self.IENE_HI,proj_axis="MODEL")
+        #--- looking for effective first energy for later visualization
+        arf_sft = project_rspmat(
+            rspmat_sft,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
+            proj_axis="MODEL",
+        )
         arf_nonzero_mask = (arf_sft!=0)
         arffene = self.IENE_CE[arf_nonzero_mask][0]
         pi_nonzero_mask = (pi_sft!=0)
-        fene = self.ENE_CE[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1
-        
-        #--- BKGSCAL & EXPOSURE & REGAREA
-        if bkgpifile is not None:
-            bkgscal = get_bkgscal(pifile,bkgpifile)
-        else:
-            bkgscal = 1
-        expo = get_expo(pifile)
-        rega = get_rega(pifile)
-        
-        gc.collect()
+        fene = self.ENE_CE[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1   
 
-        return pi_sft, bkgpi_sft, rspmat_sft, bkgscal, expo, rega, arffene, fene
-    ##############################
+        return pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,arffene,fene,expo,rega
