@@ -344,20 +344,27 @@ def make_bkggrpflg(bkgscal_lst,Nbkggrp=10):
         The average bkg-to-source scaling ratio of each group 
         (length = `Ngrp`).
     """
-    idx_lst = np.argsort(bkgscal_lst)
-    idx_lo = np.array([int(len(idx_lst) / Nbkggrp * i) for i in range(Nbkggrp)])
-    idx_hi = np.array([int(len(idx_lst) / Nbkggrp * (i+1)) - 1 for i in range(Nbkggrp)])
-    
-    bkggrpflg_lst = np.zeros(len(idx_lst),dtype="int")
-    for i in range(len(idx_lst)):
-        idx = idx_lst[i]
-        mask = (idx <= idx_hi) & (idx >= idx_lo)
-        bkggrpflg = np.arange(Nbkggrp)[mask][0] # the group id of idx
-        bkggrpflg_lst[i] = bkggrpflg
-    
-    bkgscal_ave_lst = np.ones(Nbkggrp)
-    for i in range(Nbkggrp):
-        bkgscal_ave_lst[i] = np.average(bkgscal_lst[bkggrpflg_lst==i])
+    #--- array-lize
+    bkgscal_lst = np.asarray(bkgscal_lst,dtype=float)
+    N = bkgscal_lst.size
+    if N == 0:
+        return np.array([],dtype=int),np.array([],dtype=float)
+    Nbkggrp_eff = min(int(Nbkggrp),N)  # cannot have more groups than points
+
+    #--- sort indices by bkgscal
+    order = np.argsort(bkgscal_lst)
+
+    #--- assign group IDs in sorted order: 0..Nbkggrp_eff-1, roughly equal counts
+    grp_sorted = (np.arange(N) * Nbkggrp_eff) // N  # length N, values 0..Nbkggrp_eff-1
+
+    #--- map back to original order
+    bkggrpflg_lst = np.empty(N,dtype=int)
+    bkggrpflg_lst[order] = grp_sorted
+
+    #--- group means
+    bkgscal_ave_lst = np.full(Nbkggrp_eff, np.nan, dtype=float)
+    for g in range(Nbkggrp_eff):
+        bkgscal_ave_lst[g] = bkgscal_lst[bkggrpflg_lst == g].mean()
     
     return bkggrpflg_lst, bkgscal_ave_lst
 
