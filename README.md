@@ -123,14 +123,14 @@ The output will be:
 
   - `ene_trc` specifies the energy (keV) below which the ARF is unreliable and should manually be truncated. For example, for eROSITA there may be some calibration issues below 0.2 keV, so you can set this parameter to `0.2`.
 
-  - set `--extended` if you are stacking extended sources (methods following [X. Zhang+2024](https://ui.adsabs.harvard.edu/abs/2024A%26A...691A.234Z/abstract))
+  - use `--extended` only if you are stacking extended sources (methods following [X. Zhang+2024](https://ui.adsabs.harvard.edu/abs/2024A%26A...691A.234Z/abstract))
 
   - `same_rmf` : the RMF files are usually large, and sometimes all sources to be stacked could share the same RMF in order to save space. Under this case, you can specify the file name of the common RMF with `same_rmf`.
 
 - If you want to do bootstrap, that is also easy:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --resample_method bootstrap --num_bootstrap 100
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
   ```
 
 - You can run `runXstack -h` to get the documentation of all the above parameters. Or equivalently check below:
@@ -148,18 +148,17 @@ The output will be:
   |`--ene_trc`|energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)|0.0|
   |`--extended`|whether or not this is an extended source|`False` (point source)|
   |`--same_rmf`|specify the name of common rmf, if all sources are to use the same rmf|None|
-  |`--resample_method`|method for performing resampling; `None`: no resampling, `bootstrap`: use bootstrap, `KFold`: use KFold|None|
+  |`--bootstrap`|activate `bootstrap` mode|False|
   |`--num_bootstrap`|number of bootstrap experiments in `bootstrap` mode|10|
   |`--bootstrap_portion`|portion of sources to resample in each bootstrap experiment|1.0|
-  |`--Ksort_filelist`|name of file storing the sorting value for each source in `filelist`, under `KFold` mode|`Ksort_filelist.txt`|
-  |`--K`|number of groups for `KFold`|4|
 
 
 ### :two: Python module version
 - An example:
 
   ```python
-  from Xstack.Xstack import XstackRunner, default_nh_file
+  from Xstack.Xstack import XstackRunner
+  from Xstack.config import default_nh_file
   
   ## specify the input PIs, bkg PIs, RMFs, ARFs, redshifts, Galactic nHs ...
   #pifile_lst = [...]
@@ -194,7 +193,8 @@ The output will be:
 - Or bootstrap:
 
   ```python
-  from Xstack.Xstack import resample_XstackRunner, default_nh_file
+  from Xstack.Xstack import XstackRunner
+  from Xstack.config import default_nh_file
   
   ## specify the input PIs, bkg PIs, RMFs, ARFs, redshifts, Galactic nHs ...
   #pifile_lst = [...]
@@ -205,7 +205,7 @@ The output will be:
   #nh_lst = [...]
   
   # run Xstack
-  resample_XstackRunner(
+  XstackRunner(
       pifile_lst=pifile_lst,                          # PI file list
       arffile_lst=arffile_lst,                        # ARF file list
       rmffile_lst=rmffile_lst,                        # RMF file list
@@ -220,7 +220,7 @@ The output will be:
       ene_trc=0.2,                                    # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
       extended=False,                                 # whether or not this is an extended source
       nthreads=50,                                    # number of cpus used for RMF shifting
-      resample_method="bootstrap",              		  # resample method: `bootstrap` or `KFold`
+      bootstrap=True,              		                # resample method: `bootstrap` or `KFold`
       num_bootstrap=20,							                  # number of bootstrap experiments in `bootstrap` method
       bootstrap_portion=1.0,							            # portion to resample in `bootstrap` method
       prefix="./results/stacked_",                    # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
@@ -258,7 +258,7 @@ Please take a look at the `Step 3` of primary example in [`./demo/demo.ipynb`](h
 ```latex
 @ARTICLE{2025A&A...701A.144C,
        author = {{Chen}, Shi-Jiang and {Buchner}, Johannes and {Liu}, Teng and {Hagen}, Scott and {Waddell}, Sophia G.~H. and {Nandra}, Kirpal and {Salvato}, Mara and {Igo}, Zsofi and {Aydar}, Catarina and {Merloni}, Andrea and {Ni}, Qingling and {Kang}, Jia-Lai and {Cai}, Zhen-Yi and {Wang}, Jun-Xian and {Li}, Ruancun and {Ramos-Ceja}, Miriam E. and {Sanders}, Jeremy and {Georgakakis}, Antonis and {Zhang}, Yi},
-        title = "{The average soft X-ray spectra of eROSITA active galactic nuclei}",
+        title = {The average soft X-ray spectra of eROSITA active galactic nuclei},
       journal = {\aap},
      keywords = {galaxies: active, X-rays: galaxies, High Energy Astrophysical Phenomena},
          year = 2025,
