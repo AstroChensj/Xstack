@@ -15,7 +15,6 @@ from Xstack.utils.rsp import get_prob,rebin_arf,get_tlmin_from_header
 
 
 
-
 #===================================================
 ############### RMF Visualization ##################
 #===================================================
@@ -23,7 +22,7 @@ def view_rmf(
     rmf_file,n_grid_i=1000,n_grid=1000,
     fig=None,ax=None,fig_name=None,cmap="gray_r",log_scale=False,v_min_lbound=1e-6,
     x_label="Output photon energy (keV)",y_label="Input model energy (keV)",
-    ):
+):
     """
     A convenient tool for visualizing 2D RMF matrix. 2D interpolation 
     assumed. You can either call it inside your code to visualize RMF 
@@ -158,7 +157,10 @@ def view_rmf(
 #===================================================
 ########### Quick spectral shape check #############
 #===================================================
-def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_name=None,normalize_at=None,outname=None,plot=False,ax=None,**kwargs):
+def make_dataarf_plot(
+        src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_name=None,
+        normalize_at=None,outname=None,plot=False,ax=None,**kwargs
+):
     """
     Make data/arf plot to visualize the stacked spectral shape.
 
@@ -267,10 +269,22 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
             normalize_idx = np.argmin(abs(grpene_ce-normalize_at))
             ene_ce_norm = grpene_ce[normalize_idx]
             factor_norm = ratio[normalize_idx]
+            if factor_norm <= 0:
+                raise Exception(f"Grouped data at ~{normalize_at}keV is 0 or negative --- maybe try a larger bin size when grouping data?")
+            if not np.isfinite(factor_norm):
+                raise Exception(f"Grouped data at ~{normalize_at}keV is NaN.")
         else:   # take average
-            normalize_idxs = np.argsort(abs(grpene_ce-normalize_at))[:50]   # TODO: better number than 50?
-            ene_ce_norm = np.nanmedian(grpene_ce[normalize_idxs])
-            factor_norm = np.nanmedian(ratio[normalize_idxs])
+            factor_norm = np.nan
+            for window_length in [50,100,150]:
+                wl = min(window_length,len(ratio))
+                normalize_idxs = np.argsort(abs(grpene_ce-normalize_at))[:wl]   # TODO: better number than 50?
+                ene_ce_norm = np.nanmedian(grpene_ce[normalize_idxs])
+                factor_norm = np.nanmedian(ratio[normalize_idxs])
+                if factor_norm > 0:
+                    break
+            if not np.isfinite(factor_norm):
+                raise Exception(f"Grouped data at ~{normalize_at}keV is NaN.")
+
         ratio = ratio / factor_norm
         ratioerr = ratioerr / factor_norm
 
@@ -304,7 +318,10 @@ def make_dataarf_plot(src_name,bkg_name=None,arf_name=None,rmf_name=None,grp_nam
 #===================================================
 ########### Which energy range to use ##############
 #===================================================
-def valid_energy_range_plot(fene_name,src_name,grp_name,bkg_name,rmf_name,ax=None):
+def valid_energy_range_plot(
+        fene_name,src_name,grp_name,bkg_name,rmf_name,
+        ax=None,
+):
     """
     Plot:
 
