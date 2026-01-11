@@ -53,6 +53,8 @@ class XstackRunner:
             prefix="./results/stacked_",
         ):
         """
+        Initialize Xstack.
+
         Parameters
         ----------
         pifile_lst : list or numpy.ndarray
@@ -218,7 +220,7 @@ class XstackRunner:
         self.pi_stk_rlz = [np.zeros_like(self.ENE_CE,dtype=np.float64) for _ in range(self.num_bootstrap)]      # realizations of stacked pi spectrum (num_bootstrap, Nchan)
         self.bkgpi_stk_rlz = [np.zeros_like(self.ENE_CE,dtype=np.float64) for _ in range(self.num_bootstrap)]   # realizations of stacked bkgpi spectrum (same)
         self.rspmat_stk_rlz = [np.zeros_like(self.PROB,dtype=np.float64) for _ in range(self.num_bootstrap)]    # realizations of stacked full response (num_bootstrap, Niene, Nene)
-        # ** np.float 64 is very important for LMN mode where rspmat value is very small **
+        # ** np.float64 is very important for LMN mode where rspmat value is very small **
         ##--- below will be overwritten later, so set to None
         self.pierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
         self.bkgpierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
@@ -312,7 +314,7 @@ class XstackRunner:
             self.main_logger.info("")
             self.main_logger.info(f"=== Realization {k:0{len(str(self.num_bootstrap))}d} ===")
             for i,(pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,arffene,fene,expo,rega) in enumerate(tqdm(results,total=self.Nsrc,desc="stacking")):
-                # NOTE: bwt_src: how many times the i-th source appears in the k-th bootstrap realization
+                # NOTE: bwt_src: how many times the i-th source appears in the k-th bootstrap realization (bootstrap weight)
                 bwt_src = self.bwt_lst_rlz[k][i]
                 ##--- stacking pi & rsp
                 self.pi_stk_rlz[k] += pi_sft * bwt_src
@@ -438,7 +440,31 @@ class XstackRunner:
 
     def run_single_source(self,i):
         """
-        
+        Shift single spectrum & response to rest-frame.
+        This is an internal function of `run`.
+
+        Returns
+        -------
+        pi_sft : numpy.ndarray
+            Rest-frame PI spectrum.
+        bkgpi_sft : numpy.ndarray
+            Rest-frame bkg PI spectrum.
+        bkgscal : float
+            Background-to-source scaling ratio.
+        rspmat_sft : numpy.ndarray
+            Rest-frame full response matrix.
+        rspwt : float
+            Response scaling weight. Note, a further renormalization 
+            will be needed after stacking.
+        arffene : float
+            First contributing energy from ARF.
+        fene : float
+            First contributing energy from rest-frame PI (i.e., which 
+            energy starts to contribute at least 1 photon).
+        expo : float
+            Exposure.
+        rega : float
+            Region area.
         """
         pifile = self.pifile_lst[i]
         if self.bkgpifile_lst is not None:

@@ -220,7 +220,7 @@ The output will be:
       ene_trc=0.2,                                    # energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)
       extended=False,                                 # whether or not this is an extended source
       nthreads=50,                                    # number of cpus used for RMF shifting
-      bootstrap=True,              		                # resample method: `bootstrap` or `KFold`
+      bootstrap=True,              		                # activate bootstrap?
       num_bootstrap=20,							                  # number of bootstrap experiments in `bootstrap` method
       bootstrap_portion=1.0,							            # portion to resample in `bootstrap` method
       prefix="./results/stacked_",                    # prefix for output stacked PI, BKGPI, ARF, RMF, FENE

@@ -329,11 +329,15 @@ def compute_rspwt(
 			# We take the solid-angle-weighted averaged exposure 
 			# as the stacked EXPOSURE, and 1 deg^2 as the stacked
 			# REGAREA, following X. Zhang+2024
-			rspwt = expo * rega
+			# NOTE: additional (1+z) for the same reason as PS
+			rspwt = expo * rega * (1+z)
 		# For point sources, flux in units of [erg/cm^2/s]
 		else:
 			# We take the summed exposure as the stacked EXPOSURE
-			rspwt = expo
+			# NOTE: we multiply (1+z), so that the "stacked rest-frame flux"
+			# is simply "stacked rest-frame luminosity" / (4*pi*d_L^2)
+			# where d_L is the average luminosity distance for the sample
+			rspwt = expo * (1+z)
 
 	elif rspwt_method == "LMN":   # LUMINOSITY
 		# luminosity distances in units of [Mpc]
