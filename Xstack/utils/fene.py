@@ -7,7 +7,7 @@ from Xstack.utils.logger import utc_now_iso
 from Xstack.config import VERSION,LASTUPDATE,WEB
 
 
-def write_fene(srcid_lst,arffene_lst,fene_lst,fene_name="./stacked_fene.fits"):
+def write_fene(srcid_lst,arffene_lst,fene_lst,fene_fname="./stacked_fene.fits"):
 	"""
 	Creating a fits storing the first energy of each source"s PI spectrum 
 	and ARF specresp.
@@ -20,7 +20,7 @@ def write_fene(srcid_lst,arffene_lst,fene_lst,fene_name="./stacked_fene.fits"):
 		The first energy of each sources"s ARF specresp.
 	fene_lst : list or numpy.ndarray
 		The first energy of each source"s PI spectrum.
-	fits_name : str
+	fene_fname : str
 		The output fits name.
 
 	Returns
@@ -43,6 +43,6 @@ def write_fene(srcid_lst,arffene_lst,fene_lst,fene_name="./stacked_fene.fits"):
 	hdu_fene.header["HISTORY"] = f"{utc_now_iso()}: stacked first energy diagnostic file created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
 	hdu_lst.append(hdu_fene)
 
-	hdu_lst.writeto(f"{fene_name}", overwrite=True)
+	hdu_lst.writeto(f"{fene_fname}", overwrite=True)
 
 	return

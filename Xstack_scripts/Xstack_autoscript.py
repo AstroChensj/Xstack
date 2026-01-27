@@ -106,6 +106,7 @@ parser.add_argument("--num_bkg_groups", type=int, default=10, help="number of ba
 parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
 parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
 parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
+parser.add_argument("--do_cache", action="store_true", help="save and load individual rest-frame files")
 # below are for bootstrap
 parser.add_argument("--bootstrap", action="store_true", help="activate bootstrap mode")
 parser.add_argument("--num_bootstrap", type=int, default=10, help="number of bootstrap experiments")
@@ -203,7 +204,7 @@ def main():
 	if np.all([bkgfile is None for bkgfile in bkgpifile_lst]):
 		bkgpifile_lst = None
 
-	data = XstackRunner(
+	XstackRunner(
 		pifile_lst=pifile_lst,                          # the PI spectrum list
 		arffile_lst=arffile_lst,                        # the ARF list
 		rmffile_lst=rmffile_lst,                        # the RMF list
@@ -225,6 +226,7 @@ def main():
 		num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
 		bootstrap_portion=args.bootstrap_portion,       # portion to resample in `bootstrap` method
 		prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+		do_cache=True if args.do_cache else False,		# save and load individual rest-frame files
 	).run()
 
 

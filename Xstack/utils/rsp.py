@@ -20,7 +20,40 @@ from Xstack.utils.logger import utc_now_iso
 from Xstack.config import VERSION,LASTUPDATE,WEB
 
 
-def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
+def read_rsp(rsp_fname):
+	"""
+	Read RMF/RSP file.
+
+    Parameters
+    ----------
+    rsp_fname : str
+        RMF or RSP file name.
+
+    Returns
+    -------
+    prob : numpy.ndarray
+		RMF 2D probability matrix, or RSP 2D matrix.
+    z : float
+        Redshift if exists.
+	"""
+	try:
+		with fits.open(rsp_fname) as hdu:
+			mat = hdu["MATRIX"].data
+			ebo = hdu["EBOUNDS"].data
+			head = hdu["MATRIX"].header
+	except Exception:
+		raise Exception(f"{rsp_fname} corrupted!")
+	f_chan_0 = get_tlmin_from_header(rsp_fname)
+	prob = get_prob(mat,ebo,f_chan_0)
+	z = head.get("REDSHIFT",-999.0)
+
+	return prob,z
+
+
+def shift_rsp(
+		arf_fname,rmf_fname,z,nh_file=None,nh=1e20,ene_trc=None,
+		ene_lo=None,ene_hi=None,
+):
 	"""
 	Shift the ARF&RMF. This is literally done by three steps: 
 	1. Combine input ARF and RMF into a single RSP matrix (full response);
@@ -35,9 +68,9 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
 	
 	Parameters
 	----------
-	arffile : str
+	arf_fname : str
 		The ARF file name.
-	rmffile : str
+	rmf_fname : str
 		The RMF file name.
 	z : float
 		Redshift.
@@ -62,10 +95,10 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
 	Returns
 	-------
 	rspmat_sft : numpy.ndarray
-		The shifted 2D RSP matrix.
+		Shifted 2D RSP matrix.
 	"""
 	#--- read ARF and RMF file
-	with fits.open(arffile) as hdu:
+	with fits.open(arf_fname) as hdu:
 		arf = hdu["SPECRESP"].data    # SPECRESP extension
 	arfene_lo = arf["ENERG_LO"].astype(np.float32)  # because @jit method do not accept >f4
 	arfene_hi = arf["ENERG_HI"].astype(np.float32)
@@ -73,7 +106,7 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
 	arfene_wd = arfene_hi - arfene_lo
 	specresp = arf["SPECRESP"]
 
-	with fits.open(rmffile) as hdu:
+	with fits.open(rmf_fname) as hdu:
 		mat = hdu["MATRIX"].data
 		ebo = hdu["EBOUNDS"].data
 	ene_lo = ebo["E_MIN"].astype(np.float32)
@@ -81,11 +114,11 @@ def shift_rsp(arffile,rmffile,z,nh_file=None,nh=1e20,ene_trc=None):
 	iene_lo = mat["ENERG_LO"].astype(np.float32)
 	iene_hi = mat["ENERG_HI"].astype(np.float32)
 	# get f_chan_0 using TLMIN* keyword according to OGIP standards
-	f_chan_0 = get_tlmin_from_header(rmffile)
+	f_chan_0 = get_tlmin_from_header(rmf_fname)
 
 	#--- sanity check: if the energy bins match
-	assert np.all(arfene_lo==iene_lo), "arfene_lo (from arffile) and iene_lo (from rmffile) do not match!"
-	assert np.all(arfene_hi==iene_hi), "arfene_hi (from arffile) and iene_hi (from rmffile) do not match!"
+	assert np.all(arfene_lo==iene_lo), "arfene_lo (from arf_fname) and iene_lo (from rmf_fname) do not match!"
+	assert np.all(arfene_hi==iene_hi), "arfene_hi (from arf_fname) and iene_hi (from rmf_fname) do not match!"
 
 	#--- GalNH correction on ARF (optional)
 	if nh_file is not None:
@@ -699,20 +732,21 @@ def extract_arf_rmf_from_rspmat(rspmat):
 
 
 def write_arf(
-		arfene_lo,arfene_hi,specresp,arf_name="stacked_arf.fits",
+		arfene_lo,arfene_hi,specresp,arf_fname="stacked_arf.fits",
 		detchans=1000,expo=10,rega=1,rspwt_method="SHP",rspnorm=1,
 		srcid_lst=None,rspwt_lst=None,pi_totcts_lst=None,bkgpi_totcts_lst=None,flg=None,
+		spec_type="STACKED",z=None,
 ):
 	"""
 	Write ARF file according to OGIP standards.
-    Assume all spectral files (PI, ARF, RMF) under the same path for xspec convenience.
+	Assume all spectral files (PI, ARF, RMF) under the same path for xspec convenience.
 
-    Parameters
-    ----------
+	Parameters
+	----------
 	arfene_lo : numpy.ndarray
 	arfene_hi : numpy.ndarray
 	specresp : numpy.ndarray
-	arf_name : str, optional
+	arf_fname : str, optional
 	detchans : int, optional
 	expo : int or float, optional
 	rega : int or float, optional
@@ -724,9 +758,9 @@ def write_arf(
 	bkgpi_totcts_lst : numpy.ndarray, optional
 	flg : numpy.ndarray, optional
 
-    Returns
-    -------
-    None
+	Returns
+	-------
+	None
 	"""
 	hdu_lst = fits.HDUList()
 
@@ -743,8 +777,10 @@ def write_arf(
 	hdu_specresp = fits.BinTableHDU.from_columns(cols, name="SPECRESP")
 	# ARF header following OGIP standards 
 	# https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, CAL/GEN/92-002: "The Calibration Requirements for Spectral Analysis"
-	hdu_specresp.header["TELESCOP"] = "STACKED"
-	hdu_specresp.header["INSTRUME"] = "STACKED"
+	hdu_specresp.header["TELESCOP"] = spec_type
+	hdu_specresp.header["INSTRUME"] = spec_type
+	if z is not None:
+		hdu_matrix.header["REDSHIFT"] = z
 	hdu_specresp.header["CHANTYPE"] = "PI"
 	hdu_specresp.header["DETCHANS"] = detchans
 	hdu_specresp.header["HDUCLASS"] = "OGIP"
@@ -783,15 +819,16 @@ def write_arf(
 		hdu_flag.header["FLAG"] = "whether the bin is used for RSPWT estimation"
 		hdu_lst.append(hdu_flag)
 	
-	hdu_lst.writeto(f"{arf_name}", overwrite=True)
+	hdu_lst.writeto(f"{arf_fname}", overwrite=True)
 
 	return
 
 
 def write_rmf(
-		chan,ene_lo,ene_hi,iene_lo,iene_hi,prob,rmf_name="./stacked_rmf.fits",
+		chan,ene_lo,ene_hi,iene_lo,iene_hi,prob,rmf_fname="./stacked_rmf.fits",
 		expo=10,rega=1,rspwt_method="SHP",
-		srcid_lst=None,rspwt_lst=None,arf_name="./stacked_arf.fits",
+		srcid_lst=None,rspwt_lst=None,arf_fname="./stacked_arf.fits",
+		spec_type="STACKED",z=None,
 ):
 	"""
 	
@@ -828,8 +865,8 @@ def write_rmf(
 	hdu_matrix = fits.BinTableHDU.from_columns(cols, name="MATRIX")
 	# RMF header following OGIP standards 
 	# https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, CAL/GEN/92-002: "The Calibration Requirements for Spectral Analysis"
-	hdu_matrix.header["TELESCOP"] = "STACKED"
-	hdu_matrix.header["INSTRUME"] = "STACKED"
+	hdu_matrix.header["TELESCOP"] = spec_type
+	hdu_matrix.header["INSTRUME"] = spec_type
 	hdu_matrix.header["CHANTYPE"] = "PI"
 	hdu_matrix.header["DETCHANS"] = prob.shape[1]
 	hdu_matrix.header["HDUCLASS"] = "OGIP"
@@ -839,8 +876,12 @@ def write_rmf(
 	hdu_matrix.header["TLMIN4"] = 1 # the first channel in the response
 	hdu_matrix.header["EXPOSURE"] = (expo, "stacked exposure time [s]")
 	hdu_matrix.header["REGAREA"] = (rega, "stacked region area [deg^2]")
-	hdu_matrix.header["WTMETH"] = (rspwt_method, "response weighting method [SHP/FLX/LMN]")
-	hdu_matrix.header["ANCRFILE"] = (os.path.basename(arf_name), "associated ancillary response file")
+	if rspwt_method is not None:
+		hdu_matrix.header["WTMETH"] = (rspwt_method, "response weighting method [SHP/FLX/LMN]")
+	if z is not None:
+		hdu_matrix.header["REDSHIFT"] = z
+	if arf_fname is not None:
+		hdu_matrix.header["ANCRFILE"] = (os.path.basename(arf_fname), "associated ancillary response file")
 	hdu_matrix.header["CREATOR"] = "XSTACK"
 	hdu_matrix.header["HISTORY"] = f"{utc_now_iso()}: stacked source RMF created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
 	hdu_lst.append(hdu_matrix)
@@ -854,8 +895,8 @@ def write_rmf(
 	hdu_ebounds = fits.BinTableHDU.from_columns(cols, name="EBOUNDS")
 	# RMF header following OGIP standards
 	# https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, CAL/GEN/92-002: "The Calibration Requirements for Spectral Analysis"
-	hdu_ebounds.header["TELESCOP"] = "STACKED"
-	hdu_ebounds.header["INSTRUME"] = "STACKED"
+	hdu_ebounds.header["TELESCOP"] = spec_type
+	hdu_ebounds.header["INSTRUME"] = spec_type
 	hdu_ebounds.header["CHANTYPE"] = "PI"
 	hdu_ebounds.header["DETCHANS"] = prob.shape[1]
 	hdu_ebounds.header["HDUCLASS"] = "OGIP"
@@ -874,19 +915,19 @@ def write_rmf(
 		hdu_weight = fits.BinTableHDU.from_columns(cols, name="WEIGHT")
 		hdu_lst.append(hdu_weight)
 	
-	hdu_lst.writeto(f"{rmf_name}", overwrite=True)
+	hdu_lst.writeto(f"{rmf_fname}", overwrite=True)
 
 	return
 
 
-def get_tlmin_from_header(rmffile):
+def get_tlmin_from_header(rmf_fname):
 	"""
 	Get first channel index from keyword TLMIN*, according to OGIP 
 	standards.
 
 	Parameters
 	----------
-	rmffile : str
+	rmf_fname : str
 		The RMF file name.
 
 	Returns
@@ -894,7 +935,7 @@ def get_tlmin_from_header(rmffile):
 	f_chan_0 : int
 		First channel index. Will be unity if not found (OGIP default).
 	"""
-	mat_hdr = fits.getheader(rmffile,extname="MATRIX")
+	mat_hdr = fits.getheader(rmf_fname,extname="MATRIX")
 	f_chan_0 = [mat_hdr[k] for k in mat_hdr if k.startswith("TLMIN")]
 	if len(f_chan_0) > 0:
 		f_chan_0 = f_chan_0[0]
@@ -908,419 +949,419 @@ def get_tlmin_from_header(rmffile):
 #--- below for visualization purposes
 
 def rebin_arf(arfene_lo,arfene_hi,specresp,ene_lo,ene_hi,coun,grpflg,prob=None):
-    """
-    Anchor the ARF specresp (input model energy) on the output channel 
-    energy grid.
+	"""
+	Anchor the ARF specresp (input model energy) on the output channel 
+	energy grid.
 
-    Parameters
-    ----------
-    arfene_lo : numpy.ndarray
-        Lower edge of input model energy (ARF energy) bin.
-    arfene_hi : numpy.ndarray
-        Upper edge of input model energy (ARF energy) bin.
-    specresp : numpy.ndarray
-        Effective area defined within `arfene_lo` and `arfene_hi`.
-    ene_lo : numpy.ndarray
-        Lower edge of output channel energy bin.
-    ene_hi : numpy.ndarray
-        Upper edge of output channel energy bin.
-    coun : numpy.ndarray
-        Net photon counts in each channel energy bin.
-    grpflg : numpy.ndarray
-        Channel energy grouping flag, should be passed from `rebin_pi`.
-    prob : numpy.ndarray, optional
-        The RMF 2D probability matrix. If given, the ARF used for 
-        rebinning will be RMF-weighted. Defaults to None.
+	Parameters
+	----------
+	arfene_lo : numpy.ndarray
+		Lower edge of input model energy (ARF energy) bin.
+	arfene_hi : numpy.ndarray
+		Upper edge of input model energy (ARF energy) bin.
+	specresp : numpy.ndarray
+		Effective area defined within `arfene_lo` and `arfene_hi`.
+	ene_lo : numpy.ndarray
+		Lower edge of output channel energy bin.
+	ene_hi : numpy.ndarray
+		Upper edge of output channel energy bin.
+	coun : numpy.ndarray
+		Net photon counts in each channel energy bin.
+	grpflg : numpy.ndarray
+		Channel energy grouping flag, should be passed from `rebin_pi`.
+	prob : numpy.ndarray, optional
+		The RMF 2D probability matrix. If given, the ARF used for 
+		rebinning will be RMF-weighted. Defaults to None.
 
-    Returns
-    -------
-    grpene_lo : numpy.ndarray
-        Lower edge of grouped output channel energy bin.
-    grpene_hi : numpy.ndarray
-        Upper edge of grouped output channel energy bin.
-    grpspecresp : numpy.ndarray
-        Grouped effective area as a function of grouped output channel 
-        energy.
-    """
-    ene_ce = (ene_lo + ene_hi) / 2
-    specresp_ali = align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob)
+	Returns
+	-------
+	grpene_lo : numpy.ndarray
+		Lower edge of grouped output channel energy bin.
+	grpene_hi : numpy.ndarray
+		Upper edge of grouped output channel energy bin.
+	grpspecresp : numpy.ndarray
+		Grouped effective area as a function of grouped output channel 
+		energy.
+	"""
+	ene_ce = (ene_lo + ene_hi) / 2
+	specresp_ali = align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob)
 
-    grpene_lo = []
-    grpene_hi = []
-    grpspecresp = []
+	grpene_lo = []
+	grpene_hi = []
+	grpspecresp = []
 
-    tmpene_lo = []
-    tmpene_hi = []
-    tmpspecresp = []
-    tmpwt = []    # weight
+	tmpene_lo = []
+	tmpene_hi = []
+	tmpspecresp = []
+	tmpwt = []    # weight
 
-    for i in range(len(ene_ce)):
-        if grpflg[i] == 1:    # start of group
-            # collect data
-            # if ene_tmp_lst is empty (usually the case for the first energy bin), just skip this step
-            if len(tmpene_lo)!=0:
-                grpene_lo.append(tmpene_lo[0])
-                grpene_hi.append(tmpene_hi[-1])
-                tmpspecresp = np.array(tmpspecresp)
-                tmpwt = np.array(tmpwt)
-                grpspecresp.append((tmpspecresp * tmpwt / tmpwt.sum()).sum())
-            tmpene_lo = [ene_lo[i]]
-            tmpene_hi = [ene_hi[i]]
-            tmpspecresp = [specresp_ali[i]]
-            tmpwt = [coun[i]/specresp_ali[i] if coun[i]>0 else 0]   # caution! may be refined later
-        elif grpflg[i] == -1:    # continuing of group
-            tmpene_lo.append(ene_lo[i])
-            tmpene_hi.append(ene_hi[i])
-            tmpspecresp.append(specresp_ali[i])
-            tmpwt.append(coun[i]/specresp_ali[i] if coun[i]>0 else 0)   # caution! may be refined later
-        else: 
-            raise Exception("`grpflg` not in standard format (`1` for start of group, `-1` for continuing of group)")
-        
-    # for the last energy bin
-    grpene_lo.append(tmpene_lo[0])
-    grpene_hi.append(tmpene_hi[-1])
-    tmpspecresp = np.array(tmpspecresp)
-    tmpwt = np.array(tmpwt)
-    grpspecresp.append((tmpspecresp * tmpwt / tmpwt.sum()).sum())
-    
-    grpene_lo = np.array(grpene_lo)
-    grpene_hi = np.array(grpene_hi)
-    grpspecresp = np.array(grpspecresp)
-        
-    return grpene_lo,grpene_hi,grpspecresp
+	for i in range(len(ene_ce)):
+		if grpflg[i] == 1:    # start of group
+			# collect data
+			# if ene_tmp_lst is empty (usually the case for the first energy bin), just skip this step
+			if len(tmpene_lo)!=0:
+				grpene_lo.append(tmpene_lo[0])
+				grpene_hi.append(tmpene_hi[-1])
+				tmpspecresp = np.array(tmpspecresp)
+				tmpwt = np.array(tmpwt)
+				grpspecresp.append((tmpspecresp * tmpwt / tmpwt.sum()).sum())
+			tmpene_lo = [ene_lo[i]]
+			tmpene_hi = [ene_hi[i]]
+			tmpspecresp = [specresp_ali[i]]
+			tmpwt = [coun[i]/specresp_ali[i] if coun[i]>0 else 0]   # caution! may be refined later
+		elif grpflg[i] == -1:    # continuing of group
+			tmpene_lo.append(ene_lo[i])
+			tmpene_hi.append(ene_hi[i])
+			tmpspecresp.append(specresp_ali[i])
+			tmpwt.append(coun[i]/specresp_ali[i] if coun[i]>0 else 0)   # caution! may be refined later
+		else: 
+			raise Exception("`grpflg` not in standard format (`1` for start of group, `-1` for continuing of group)")
+		
+	# for the last energy bin
+	grpene_lo.append(tmpene_lo[0])
+	grpene_hi.append(tmpene_hi[-1])
+	tmpspecresp = np.array(tmpspecresp)
+	tmpwt = np.array(tmpwt)
+	grpspecresp.append((tmpspecresp * tmpwt / tmpwt.sum()).sum())
+	
+	grpene_lo = np.array(grpene_lo)
+	grpene_hi = np.array(grpene_hi)
+	grpspecresp = np.array(grpspecresp)
+		
+	return grpene_lo,grpene_hi,grpspecresp
 
 
 
 def align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob=None):
-    """
-    The ARF energy bin and RMF energy bin (also the PI channel energy 
-    bin) does not always match. Align the ARF to get the effective area 
-    at each RMF energy bin.
+	"""
+	The ARF energy bin and RMF energy bin (also the PI channel energy 
+	bin) does not always match. Align the ARF to get the effective area 
+	at each RMF energy bin.
 
-    Parameters
-    ----------
-    ene_lo : numpy.ndarray
-        Lower edge of output channel energy bin.
-    ene_hi : numpy.ndarray
-        Upper edge of output channel energy bin.
-    arfene_lo : numpy.ndarray
-        Lower edge of input model energy (ARF energy) bin.
-    arfene_hi : numpy.ndarray
-        Upper edge of input model energy (ARF energy) bin.
-    specresp : numpy.ndarray
-        The ARF specresp (cm^2 vs. arf energy).
-    prob : numpy.ndarray, optional
-        RMF 2D matrix (prob.shape=(len(`arfene_lo`),len(`ene_lo`))).
+	Parameters
+	----------
+	ene_lo : numpy.ndarray
+		Lower edge of output channel energy bin.
+	ene_hi : numpy.ndarray
+		Upper edge of output channel energy bin.
+	arfene_lo : numpy.ndarray
+		Lower edge of input model energy (ARF energy) bin.
+	arfene_hi : numpy.ndarray
+		Upper edge of input model energy (ARF energy) bin.
+	specresp : numpy.ndarray
+		The ARF specresp (cm^2 vs. arf energy).
+	prob : numpy.ndarray, optional
+		RMF 2D matrix (prob.shape=(len(`arfene_lo`),len(`ene_lo`))).
 
-    Returns
-    -------
-    specresp_ali : numpy.ndarray
-        The aligned ARF specresp.
-    """
-    assert ene_lo.shape == ene_hi.shape, ""
-    
-    if prob is None:
-        arfene_wd = arfene_hi - arfene_lo
-        specresp_ali = np.zeros(len(ene_lo))    # aligned specresp
-        for i in range(len(specresp_ali)):
-            mask = (ene_lo[i] <= arfene_hi) & (ene_hi[i] >= arfene_lo)
-            if np.all(mask==False):
-                continue
-            arfene_mask_lo = arfene_lo[mask].copy()
-            arfene_mask_hi = arfene_hi[mask].copy()
-            arfene_mask_wd = arfene_wd[mask].copy()
-            specresp_mask = specresp[mask].copy()
-            
-            # for the first and last masked channel, we need to recalculate their widths
-            arfene_mask_wd[0] = arfene_mask_hi[0] - ene_lo[i]
-            arfene_mask_wd[-1] = ene_hi[i] - arfene_mask_lo[-1]
-            
-            prob_mask = arfene_mask_wd / arfene_mask_wd.sum()
-            specresp_ali[i] = (specresp_mask * prob_mask).sum()
+	Returns
+	-------
+	specresp_ali : numpy.ndarray
+		The aligned ARF specresp.
+	"""
+	assert ene_lo.shape == ene_hi.shape, ""
+	
+	if prob is None:
+		arfene_wd = arfene_hi - arfene_lo
+		specresp_ali = np.zeros(len(ene_lo))    # aligned specresp
+		for i in range(len(specresp_ali)):
+			mask = (ene_lo[i] <= arfene_hi) & (ene_hi[i] >= arfene_lo)
+			if np.all(mask==False):
+				continue
+			arfene_mask_lo = arfene_lo[mask].copy()
+			arfene_mask_hi = arfene_hi[mask].copy()
+			arfene_mask_wd = arfene_wd[mask].copy()
+			specresp_mask = specresp[mask].copy()
+			
+			# for the first and last masked channel, we need to recalculate their widths
+			arfene_mask_wd[0] = arfene_mask_hi[0] - ene_lo[i]
+			arfene_mask_wd[-1] = ene_hi[i] - arfene_mask_lo[-1]
+			
+			prob_mask = arfene_mask_wd / arfene_mask_wd.sum()
+			specresp_ali[i] = (specresp_mask * prob_mask).sum()
 
-    else:
-        arfene_ce = (arfene_lo + arfene_hi) / 2
-        arfene_wd = arfene_hi - arfene_lo
-        ene_ce = (ene_lo + ene_hi) / 2
-        ene_wd = ene_hi - ene_lo
-        assert prob.shape[0] == len(arfene_ce), ""
-        assert prob.shape[1] == len(ene_ce), ""
+	else:
+		arfene_ce = (arfene_lo + arfene_hi) / 2
+		arfene_wd = arfene_hi - arfene_lo
+		ene_ce = (ene_lo + ene_hi) / 2
+		ene_wd = ene_hi - ene_lo
+		assert prob.shape[0] == len(arfene_ce), ""
+		assert prob.shape[1] == len(ene_ce), ""
 
-        specresp_arfenewd = specresp * arfene_wd
-        specresp_arfenewd_ali = np.sum(specresp_arfenewd[:,np.newaxis]*prob,axis=0)
-        specresp_ali = specresp_arfenewd_ali / ene_wd
-        
-    return specresp_ali
+		specresp_arfenewd = specresp * arfene_wd
+		specresp_arfenewd_ali = np.sum(specresp_arfenewd[:,np.newaxis]*prob,axis=0)
+		specresp_ali = specresp_arfenewd_ali / ene_wd
+		
+	return specresp_ali
 
 
 
 #===================================================
 ################ Concatenating RMFs ################
 #===================================================
-def concat_rmf(rmffile1,rmffile2,Es,Ee,Ngrid,out_name):
-    """
-    Concatenate two RMFs into a single large RMF.
-    
-    Parameters
-    ----------
-    rmffile1 : str
-        Name of rmf with lower energy.
-    rmffile2 : str
-        Name of rmf with higher energy.
-    Es : float
-        Starting energy of the output rmf. Cannot be larger than minimum 
-        energy of `rmffile1`.
-    Ee : float
-        Ending energy of the output rmf. Cannot be smaller than maximum 
-        energy of `rmffile2`.
-    Ngrid : int
-        Number of grids between `Es` and `rmffile1` (also between 
-        `rmffile1` and `rmffile2`, between `rmffile2` and `Ee`).
-    out_name : str
-        Output rmf name.
+def concat_rmf(rmf_fname1,rmf_fname2,Es,Ee,Ngrid,out_fname):
+	"""
+	Concatenate two RMFs into a single large RMF.
+	
+	Parameters
+	----------
+	rmf_fname1 : str
+		Name of rmf with lower energy.
+	rmf_fname2 : str
+		Name of rmf with higher energy.
+	Es : float
+		Starting energy of the output rmf. Cannot be larger than minimum 
+		energy of `rmf_fname1`.
+	Ee : float
+		Ending energy of the output rmf. Cannot be smaller than maximum 
+		energy of `rmf_fname2`.
+	Ngrid : int
+		Number of grids between `Es` and `rmf_fname1` (also between 
+		`rmf_fname1` and `rmf_fname2`, between `rmf_fname2` and `Ee`).
+	out_fname : str
+		Output rmf name.
 
-    Returns
-    -------
-    prob : numpy.ndarray
-        The output 2D RMF matrix.
-    """
-    with fits.open(rmffile1) as hdu:
-        mat1 = hdu["MATRIX"].data
-        ebo1 = hdu["EBOUNDS"].data
-        expo = hdu["MATRIX"].header["EXPOSURE"]
-    arfene1_lo = mat1["ENERG_LO"]
-    arfene1_hi = mat1["ENERG_HI"]
-    ene1_lo = ebo1["E_MIN"]
-    ene1_hi = ebo1["E_MAX"]
-    n_grp1 = mat1["N_GRP"]
-    f_chan1 = mat1["F_CHAN"]
-    n_chan1 = mat1["N_CHAN"]
-    matrix1 = np.array(mat1["MATRIX"])
-    f_chan1_0 = get_tlmin_from_header(rmffile1)
+	Returns
+	-------
+	prob : numpy.ndarray
+		The output 2D RMF matrix.
+	"""
+	with fits.open(rmf_fname1) as hdu:
+		mat1 = hdu["MATRIX"].data
+		ebo1 = hdu["EBOUNDS"].data
+		expo = hdu["MATRIX"].header["EXPOSURE"]
+	arfene1_lo = mat1["ENERG_LO"]
+	arfene1_hi = mat1["ENERG_HI"]
+	ene1_lo = ebo1["E_MIN"]
+	ene1_hi = ebo1["E_MAX"]
+	n_grp1 = mat1["N_GRP"]
+	f_chan1 = mat1["F_CHAN"]
+	n_chan1 = mat1["N_CHAN"]
+	matrix1 = np.array(mat1["MATRIX"])
+	f_chan1_0 = get_tlmin_from_header(rmf_fname1)
 
-    with fits.open(rmffile2) as hdu:
-        mat2 = hdu["MATRIX"].data
-        ebo2 = hdu["EBOUNDS"].data
-    arfene2_lo = mat2["ENERG_LO"]
-    arfene2_hi = mat2["ENERG_HI"]
-    ene2_lo = ebo2["E_MIN"]
-    ene2_hi = ebo2["E_MAX"]
-    n_grp2 = mat2["N_GRP"]
-    f_chan2 = mat2["F_CHAN"]
-    n_chan2 = mat2["N_CHAN"]
-    matrix2 = np.array(mat2["MATRIX"])
-    f_chan2_0 = get_tlmin_from_header(rmffile2)
+	with fits.open(rmf_fname2) as hdu:
+		mat2 = hdu["MATRIX"].data
+		ebo2 = hdu["EBOUNDS"].data
+	arfene2_lo = mat2["ENERG_LO"]
+	arfene2_hi = mat2["ENERG_HI"]
+	ene2_lo = ebo2["E_MIN"]
+	ene2_hi = ebo2["E_MAX"]
+	n_grp2 = mat2["N_GRP"]
+	f_chan2 = mat2["F_CHAN"]
+	n_chan2 = mat2["N_CHAN"]
+	matrix2 = np.array(mat2["MATRIX"])
+	f_chan2_0 = get_tlmin_from_header(rmf_fname2)
 
-    assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmffile1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmffile2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
-    assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmffile1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmffile2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
-    assert np.max(ene1_hi) <= np.min(ene2_lo), "Highest channel energy of `rmffile1` (detected: %f) should be no greater than lowest channel energy (detected: %f) of `rmffile2` !"%(np.max(ene1_hi),np.min(ene2_lo))
+	assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmf_fname1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmf_fname2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
+	assert np.max(arfene1_hi) <= np.min(arfene2_lo), "Highest model energy of `rmf_fname1` (detected: %f) should be no greater than lowest model energy (detected: %f) of `rmf_fname2` !"%(np.max(arfene1_hi),np.min(arfene2_lo))
+	assert np.max(ene1_hi) <= np.min(ene2_lo), "Highest channel energy of `rmf_fname1` (detected: %f) should be no greater than lowest channel energy (detected: %f) of `rmf_fname2` !"%(np.max(ene1_hi),np.min(ene2_lo))
 
-    arfenes1 = np.logspace(np.log10(Es),np.log10(np.min(arfene1_lo)),Ngrid) # model energy grid from Es to 1st min model energy of rmffile1
-    arfene12 = np.logspace(np.log10(np.max(arfene1_hi)),np.log10(np.min(arfene2_lo)),Ngrid) # model energy grid from last max model energy of rmffile1 to 1st min model energy of rmffile2
-    arfene2e = np.logspace(np.log10(np.max(arfene2_hi)),np.log10(Ee),Ngrid) # model energy grid from last max model energy of rmffile2 to Ee
-    arfene_lo = np.concatenate((arfenes1[:-1],arfene1_lo,arfene12[:-1],arfene2_lo,arfene2e[:-1]))   # model lower energy of the new arfene grid 
-    arfene_hi = np.concatenate((arfenes1[1:],arfene1_hi,arfene12[1:],arfene2_hi,arfene2e[1:]))      # model upper energy of the new arfene grid 
-    arfene_ce = (arfene_lo + arfene_hi) / 2
-    arfene_wd = arfene_hi - arfene_lo
-    arfene_id = np.arange(len(arfene_ce))
-    didx_arfene1 = len(arfenes1) - 1    # 1st idx of rmffile1 in the new arfene grid
-    didx_arfene2 = len(arfenes1) - 1 + len(arfene1_lo) + len(arfene12) - 1  # 1st idx of rmffile2 in the new arfene grid
+	arfenes1 = np.logspace(np.log10(Es),np.log10(np.min(arfene1_lo)),Ngrid) # model energy grid from Es to 1st min model energy of rmf_fname1
+	arfene12 = np.logspace(np.log10(np.max(arfene1_hi)),np.log10(np.min(arfene2_lo)),Ngrid) # model energy grid from last max model energy of rmf_fname1 to 1st min model energy of rmf_fname2
+	arfene2e = np.logspace(np.log10(np.max(arfene2_hi)),np.log10(Ee),Ngrid) # model energy grid from last max model energy of rmf_fname2 to Ee
+	arfene_lo = np.concatenate((arfenes1[:-1],arfene1_lo,arfene12[:-1],arfene2_lo,arfene2e[:-1]))   # model lower energy of the new arfene grid 
+	arfene_hi = np.concatenate((arfenes1[1:],arfene1_hi,arfene12[1:],arfene2_hi,arfene2e[1:]))      # model upper energy of the new arfene grid 
+	arfene_ce = (arfene_lo + arfene_hi) / 2
+	arfene_wd = arfene_hi - arfene_lo
+	arfene_id = np.arange(len(arfene_ce))
+	didx_arfene1 = len(arfenes1) - 1    # 1st idx of rmf_fname1 in the new arfene grid
+	didx_arfene2 = len(arfenes1) - 1 + len(arfene1_lo) + len(arfene12) - 1  # 1st idx of rmf_fname2 in the new arfene grid
 
-    enes1 = np.logspace(np.log10(Es),np.log10(np.min(ene1_lo)),Ngrid)
-    ene12 = np.logspace(np.log10(np.max(ene1_hi)),np.log10(np.min(ene2_lo)),Ngrid)
-    ene2e = np.logspace(np.log10(np.max(ene2_hi)),np.log10(Ee),Ngrid)
-    ene_lo = np.concatenate((enes1[:-1],ene1_lo,ene12[:-1],ene2_lo,ene2e[:-1]))
-    ene_hi = np.concatenate((enes1[1:],ene1_hi,ene12[1:],ene2_hi,ene2e[1:]))
-    ene_ce = (ene_lo + ene_hi) / 2
-    ene_wd = ene_hi - ene_lo
-    ene_id = np.arange(len(ene_ce))
-    didx_ene1 = len(enes1) - 1    # 1st idx of rmffile1 in the new ene grid
-    didx_ene2 = len(enes1) - 1 + len(ene1_lo) + len(ene12) - 1  # 1st idx of rmffile2 in the new ene grid
+	enes1 = np.logspace(np.log10(Es),np.log10(np.min(ene1_lo)),Ngrid)
+	ene12 = np.logspace(np.log10(np.max(ene1_hi)),np.log10(np.min(ene2_lo)),Ngrid)
+	ene2e = np.logspace(np.log10(np.max(ene2_hi)),np.log10(Ee),Ngrid)
+	ene_lo = np.concatenate((enes1[:-1],ene1_lo,ene12[:-1],ene2_lo,ene2e[:-1]))
+	ene_hi = np.concatenate((enes1[1:],ene1_hi,ene12[1:],ene2_hi,ene2e[1:]))
+	ene_ce = (ene_lo + ene_hi) / 2
+	ene_wd = ene_hi - ene_lo
+	ene_id = np.arange(len(ene_ce))
+	didx_ene1 = len(enes1) - 1    # 1st idx of rmf_fname1 in the new ene grid
+	didx_ene2 = len(enes1) - 1 + len(ene1_lo) + len(ene12) - 1  # 1st idx of rmf_fname2 in the new ene grid
 
 
-    grid = np.meshgrid(ene_ce,arfene_ce)    # ( (len(arfene_ce),len(ene_ce)), (len(arfene_ce),len(ene_ce)) )
-    prob = np.zeros(grid[0].shape)          # probability per channel
+	grid = np.meshgrid(ene_ce,arfene_ce)    # ( (len(arfene_ce),len(ene_ce)), (len(arfene_ce),len(ene_ce)) )
+	prob = np.zeros(grid[0].shape)          # probability per channel
 
-    for i in range(len(arfene_ce)):
-        if i < didx_arfene1:
-            mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
-            prob[i][ene_id[mask][0]] = 1
-        elif (i >= didx_arfene1) and (i < didx_arfene1 + len(arfene1_lo)):
-            arfene1_idx = i - didx_arfene1
-            prob[i][didx_ene1:didx_ene1+len(ene1_lo)] = get_prob1d(n_grp1[arfene1_idx],f_chan1[arfene1_idx],n_chan1[arfene1_idx],matrix1[arfene1_idx],len(ene1_lo),f_chan1_0)
-        elif (i >= didx_arfene1 + len(arfene1_lo)) and (i < didx_arfene2):
-            mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
-            prob[i][ene_id[mask][0]] = 1
-        elif (i >= didx_arfene2) and (i < didx_arfene2 + len(arfene2_lo)):
-            arfene2_idx = i - didx_arfene2
-            prob[i][didx_ene2:didx_ene2+len(ene2_lo)] = get_prob1d(n_grp2[arfene2_idx],f_chan2[arfene2_idx],n_chan2[arfene2_idx],matrix2[arfene2_idx],len(ene2_lo),f_chan2_0)
-        else:
-            mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
-            prob[i][ene_id[mask][0]] = 1
+	for i in range(len(arfene_ce)):
+		if i < didx_arfene1:
+			mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
+			prob[i][ene_id[mask][0]] = 1
+		elif (i >= didx_arfene1) and (i < didx_arfene1 + len(arfene1_lo)):
+			arfene1_idx = i - didx_arfene1
+			prob[i][didx_ene1:didx_ene1+len(ene1_lo)] = get_prob1d(n_grp1[arfene1_idx],f_chan1[arfene1_idx],n_chan1[arfene1_idx],matrix1[arfene1_idx],len(ene1_lo),f_chan1_0)
+		elif (i >= didx_arfene1 + len(arfene1_lo)) and (i < didx_arfene2):
+			mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
+			prob[i][ene_id[mask][0]] = 1
+		elif (i >= didx_arfene2) and (i < didx_arfene2 + len(arfene2_lo)):
+			arfene2_idx = i - didx_arfene2
+			prob[i][didx_ene2:didx_ene2+len(ene2_lo)] = get_prob1d(n_grp2[arfene2_idx],f_chan2[arfene2_idx],n_chan2[arfene2_idx],matrix2[arfene2_idx],len(ene2_lo),f_chan2_0)
+		else:
+			mask = (arfene_ce[i] <= ene_hi) & (arfene_ce[i] > ene_lo)
+			prob[i][ene_id[mask][0]] = 1
 
-    # in case you have any nan values
-    prob[np.isclose(prob,0,rtol=1e-06, atol=1e-06, equal_nan=False)] = 0 # remove elements with probability below the 1e-6 threshold
-    prob[np.isnan(prob)] = 0 # remove NaN
-    prob[prob<0] = 0 # remove negative elements
-    prob /= np.sum(prob,axis=1)[:,np.newaxis] # renormalize
-    prob[np.isnan(prob)] = 0 # remove NaN (produced when 0/0)
-    # for the first few input energies, the probability may be empty
-    # assign the first channel with 1 (an arbitrary choice)
-    for i in range(len(prob)):
-        if np.max(prob[i]) == 0.:
-            prob[i][0] = 1
+	# in case you have any nan values
+	prob[np.isclose(prob,0,rtol=1e-06, atol=1e-06, equal_nan=False)] = 0 # remove elements with probability below the 1e-6 threshold
+	prob[np.isnan(prob)] = 0 # remove NaN
+	prob[prob<0] = 0 # remove negative elements
+	prob /= np.sum(prob,axis=1)[:,np.newaxis] # renormalize
+	prob[np.isnan(prob)] = 0 # remove NaN (produced when 0/0)
+	# for the first few input energies, the probability may be empty
+	# assign the first channel with 1 (an arbitrary choice)
+	for i in range(len(prob)):
+		if np.max(prob[i]) == 0.:
+			prob[i][0] = 1
 
-    # Create fits file
-    hdu_lst = fits.HDUList()
-            
-    # extension 0: primary hdu
-    primary_hdu = fits.PrimaryHDU()
-    hdu_lst.append(primary_hdu)
+	# Create fits file
+	hdu_lst = fits.HDUList()
+			
+	# extension 0: primary hdu
+	primary_hdu = fits.PrimaryHDU()
+	hdu_lst.append(primary_hdu)
 
-    # extension 1: MATRIX
-    n_grp = []
-    f_chan = []
-    n_chan = []
-    matrix = []
-    for i in range(len(arfene_lo)):
-        n_grp.append(1)
-        f_chan.append(np.array([1]))
-        prob_i = prob[i]
-        # Find the index of the first non-zero element from the end
-        last_nonzero_idx = len(prob_i) - np.argmax(prob_i[::-1] != 0) - 1
-        n_chan.append(np.array([last_nonzero_idx+1]))
-        matrix.append(prob_i[:last_nonzero_idx+1])
-    n_grp = np.array(n_grp)
-        
-    cols = [fits.Column(name="ENERG_LO", format="D", array=arfene_lo),
-            fits.Column(name="ENERG_HI", format="D", array=arfene_hi),
-            fits.Column(name="N_GRP", format="J", array=n_grp),
-            fits.Column(name="F_CHAN", format="PJ()", array=f_chan),
-            fits.Column(name="N_CHAN", format="PJ()", array=n_chan),
-            fits.Column(name="MATRIX", format="PD()", array=matrix)]
-    hdu_matrix = fits.BinTableHDU.from_columns(cols, name="MATRIX")
-    # RMF header following OGIP standards
+	# extension 1: MATRIX
+	n_grp = []
+	f_chan = []
+	n_chan = []
+	matrix = []
+	for i in range(len(arfene_lo)):
+		n_grp.append(1)
+		f_chan.append(np.array([1]))
+		prob_i = prob[i]
+		# Find the index of the first non-zero element from the end
+		last_nonzero_idx = len(prob_i) - np.argmax(prob_i[::-1] != 0) - 1
+		n_chan.append(np.array([last_nonzero_idx+1]))
+		matrix.append(prob_i[:last_nonzero_idx+1])
+	n_grp = np.array(n_grp)
+		
+	cols = [fits.Column(name="ENERG_LO", format="D", array=arfene_lo),
+			fits.Column(name="ENERG_HI", format="D", array=arfene_hi),
+			fits.Column(name="N_GRP", format="J", array=n_grp),
+			fits.Column(name="F_CHAN", format="PJ()", array=f_chan),
+			fits.Column(name="N_CHAN", format="PJ()", array=n_chan),
+			fits.Column(name="MATRIX", format="PD()", array=matrix)]
+	hdu_matrix = fits.BinTableHDU.from_columns(cols, name="MATRIX")
+	# RMF header following OGIP standards
 	# https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, CAL/GEN/92-002: "The Calibration Requirements for Spectral Analysis"
-    hdu_matrix.header["TELESCOP"] = "CONCAT"
-    hdu_matrix.header["INSTRUME"] = "CONCAT"
-    hdu_matrix.header["CHANTYPE"] = "PI"
-    hdu_matrix.header["DETCHANS"] = prob.shape[1]
-    hdu_matrix.header["HDUCLASS"] = "OGIP"
-    hdu_matrix.header["HDUCLAS1"] = "RESPONSE"
-    hdu_matrix.header["HDUCLAS2"] = "RSP_MATRIX"
-    hdu_matrix.header["HDUVERS"] = "1.3.0"
-    hdu_matrix.header["TLMIN4"] = 1 # the first channel in the response
-    hdu_matrix.header["EXPOSURE"] = expo
-    hdu_matrix.header["ANCRFILE"] = "NONE"
-    hdu_matrix.header["CREATOR"] = "XSTACK"
-    hdu_lst.append(hdu_matrix)
+	hdu_matrix.header["TELESCOP"] = "CONCAT"
+	hdu_matrix.header["INSTRUME"] = "CONCAT"
+	hdu_matrix.header["CHANTYPE"] = "PI"
+	hdu_matrix.header["DETCHANS"] = prob.shape[1]
+	hdu_matrix.header["HDUCLASS"] = "OGIP"
+	hdu_matrix.header["HDUCLAS1"] = "RESPONSE"
+	hdu_matrix.header["HDUCLAS2"] = "RSP_MATRIX"
+	hdu_matrix.header["HDUVERS"] = "1.3.0"
+	hdu_matrix.header["TLMIN4"] = 1 # the first channel in the response
+	hdu_matrix.header["EXPOSURE"] = expo
+	hdu_matrix.header["ANCRFILE"] = "NONE"
+	hdu_matrix.header["CREATOR"] = "XSTACK"
+	hdu_lst.append(hdu_matrix)
 
-    # extension 2: EBOUNDS
-    chan = np.arange(1,len(ene_lo)+1)
-    cols = [fits.Column(name="CHANNEL", format="J", array=chan),
-            fits.Column(name="E_MIN", format="D", array=ene_lo),
-            fits.Column(name="E_MAX", format="D", array=ene_hi)]
-    hdu_ebounds = fits.BinTableHDU.from_columns(cols, name="EBOUNDS")
-    # RMF header following OGIP standards
+	# extension 2: EBOUNDS
+	chan = np.arange(1,len(ene_lo)+1)
+	cols = [fits.Column(name="CHANNEL", format="J", array=chan),
+			fits.Column(name="E_MIN", format="D", array=ene_lo),
+			fits.Column(name="E_MAX", format="D", array=ene_hi)]
+	hdu_ebounds = fits.BinTableHDU.from_columns(cols, name="EBOUNDS")
+	# RMF header following OGIP standards
 	# https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, CAL/GEN/92-002: "The Calibration Requirements for Spectral Analysis"
-    hdu_ebounds.header["TELESCOP"] = "CONCAT"
-    hdu_ebounds.header["INSTRUME"] = "CONCAT"
-    hdu_ebounds.header["CHANTYPE"] = "PI"
-    hdu_ebounds.header["DETCHANS"] = prob.shape[1]
-    hdu_ebounds.header["HDUCLASS"] = "OGIP"
-    hdu_ebounds.header["HDUCLAS1"] = "RESPONSE"
-    hdu_ebounds.header["HDUCLAS2"] = "EBOUNDS"
-    hdu_ebounds.header["HDUVERS"] = "1.2.0"
-    hdu_lst.append(hdu_ebounds)
+	hdu_ebounds.header["TELESCOP"] = "CONCAT"
+	hdu_ebounds.header["INSTRUME"] = "CONCAT"
+	hdu_ebounds.header["CHANTYPE"] = "PI"
+	hdu_ebounds.header["DETCHANS"] = prob.shape[1]
+	hdu_ebounds.header["HDUCLASS"] = "OGIP"
+	hdu_ebounds.header["HDUCLAS1"] = "RESPONSE"
+	hdu_ebounds.header["HDUCLAS2"] = "EBOUNDS"
+	hdu_ebounds.header["HDUVERS"] = "1.2.0"
+	hdu_lst.append(hdu_ebounds)
 
-    hdu_lst.writeto(f"{out_name}", overwrite=True)
+	hdu_lst.writeto(f"{out_fname}", overwrite=True)
 
-    return prob
+	return prob
 
 
 #===================================================
 ################ Concatenating ARFs ################
 #===================================================
-def concat_arf(arffile1,arffile2,Es,Ee,Ngrid,out_name):
-    """
-    Concatenate two ARFs into a single large ARF.
-    
-    Parameters
-    ----------
-    arffile1 : str
-        Name of arf with lower energy.
-    arffile2 : str
-        Name of arf with higher energy.
-    Es : float
-        Starting energy of the output arf. Cannot be larger than minimum 
-        energy of `arffile1`.
-    Ee : float
-        Ending energy of the output arf. Cannot be smaller than maximum 
-        energy of `arffile2`.
-    Ngrid : int
-        Number of grids between `Es` and `arffile1` (also between 
-        `arffile1` and `arffile2`, between `arffile2` and `Ee`).
-    out_name : str
-        Output ARF name.
+def concat_arf(arf_fname1,arf_fname2,Es,Ee,Ngrid,out_fname):
+	"""
+	Concatenate two ARFs into a single large ARF.
+	
+	Parameters
+	----------
+	arf_fname1 : str
+		Name of arf with lower energy.
+	arf_fname2 : str
+		Name of arf with higher energy.
+	Es : float
+		Starting energy of the output arf. Cannot be larger than minimum 
+		energy of `arf_fname1`.
+	Ee : float
+		Ending energy of the output arf. Cannot be smaller than maximum 
+		energy of `arf_fname2`.
+	Ngrid : int
+		Number of grids between `Es` and `arf_fname1` (also between 
+		`arf_fname1` and `arf_fname2`, between `arf_fname2` and `Ee`).
+	out_fname : str
+		Output ARF name.
 
-    Returns
-    -------
-    specresp : numpy.ndarray
-        The output ARF specresp.
-    """
-    with fits.open(arffile1) as hdu:
-        arf1 = hdu["SPECRESP"].data
-        expo = hdu["SPECRESP"].header["EXPOSURE"]
-    arfene1_lo = arf1["ENERG_LO"]
-    arfene1_hi = arf1["ENERG_HI"]
-    arfene1_ce = (arfene1_lo + arfene1_hi) / 2
-    arfene1_wd = arfene1_hi - arfene1_lo
-    specresp1 = arf1["SPECRESP"]
+	Returns
+	-------
+	specresp : numpy.ndarray
+		The output ARF specresp.
+	"""
+	with fits.open(arf_fname1) as hdu:
+		arf1 = hdu["SPECRESP"].data
+		expo = hdu["SPECRESP"].header["EXPOSURE"]
+	arfene1_lo = arf1["ENERG_LO"]
+	arfene1_hi = arf1["ENERG_HI"]
+	arfene1_ce = (arfene1_lo + arfene1_hi) / 2
+	arfene1_wd = arfene1_hi - arfene1_lo
+	specresp1 = arf1["SPECRESP"]
 
-    with fits.open(arffile2) as hdu:
-        arf2 = hdu["SPECRESP"].data
-    arfene2_lo = arf2["ENERG_LO"]
-    arfene2_hi = arf2["ENERG_HI"]
-    arfene2_ce = (arfene2_lo + arfene2_hi) / 2
-    arfene2_wd = arfene2_hi - arfene2_lo
-    specresp2 = arf2["SPECRESP"]
+	with fits.open(arf_fname2) as hdu:
+		arf2 = hdu["SPECRESP"].data
+	arfene2_lo = arf2["ENERG_LO"]
+	arfene2_hi = arf2["ENERG_HI"]
+	arfene2_ce = (arfene2_lo + arfene2_hi) / 2
+	arfene2_wd = arfene2_hi - arfene2_lo
+	specresp2 = arf2["SPECRESP"]
 
-    arfenes1 = np.logspace(np.log10(Es),np.log10(np.min(arfene1_lo)),Ngrid) # model energy grid from Es to 1st min model energy of arffile1
-    arfene12 = np.logspace(np.log10(np.max(arfene1_hi)),np.log10(np.min(arfene2_lo)),Ngrid) # model energy grid from last max model energy of rmffile1 to 1st min model energy of arffile2
-    arfene2e = np.logspace(np.log10(np.max(arfene2_hi)),np.log10(Ee),Ngrid) # model energy grid from last max model energy of arffile2 to Ee
-    arfene_lo = np.concatenate((arfenes1[:-1],arfene1_lo,arfene12[:-1],arfene2_lo,arfene2e[:-1]))   # model lower energy of the new arfene grid 
-    arfene_hi = np.concatenate((arfenes1[1:],arfene1_hi,arfene12[1:],arfene2_hi,arfene2e[1:]))      # model upper energy of the new arfene grid 
-    arfene_ce = (arfene_lo + arfene_hi) / 2
-    arfene_wd = arfene_hi - arfene_lo
-    arfene_id = np.arange(len(arfene_ce))
+	arfenes1 = np.logspace(np.log10(Es),np.log10(np.min(arfene1_lo)),Ngrid) # model energy grid from Es to 1st min model energy of arf_fname1
+	arfene12 = np.logspace(np.log10(np.max(arfene1_hi)),np.log10(np.min(arfene2_lo)),Ngrid) # model energy grid from last max model energy of rmf_fname1 to 1st min model energy of arf_fname2
+	arfene2e = np.logspace(np.log10(np.max(arfene2_hi)),np.log10(Ee),Ngrid) # model energy grid from last max model energy of arf_fname2 to Ee
+	arfene_lo = np.concatenate((arfenes1[:-1],arfene1_lo,arfene12[:-1],arfene2_lo,arfene2e[:-1]))   # model lower energy of the new arfene grid 
+	arfene_hi = np.concatenate((arfenes1[1:],arfene1_hi,arfene12[1:],arfene2_hi,arfene2e[1:]))      # model upper energy of the new arfene grid 
+	arfene_ce = (arfene_lo + arfene_hi) / 2
+	arfene_wd = arfene_hi - arfene_lo
+	arfene_id = np.arange(len(arfene_ce))
 
-    specresps1 = np.ones(Ngrid-1) * specresp1[0]
-    specresp12 = np.logspace(np.log10(max(specresp1[-1],1)),np.log10(max(specresp2[0],1)),Ngrid-1)
-    specresp2e = np.ones(Ngrid-1) * specresp2[-1]
-    specresp = np.concatenate((specresps1,specresp1,specresp12,specresp2,specresp2e))
+	specresps1 = np.ones(Ngrid-1) * specresp1[0]
+	specresp12 = np.logspace(np.log10(max(specresp1[-1],1)),np.log10(max(specresp2[0],1)),Ngrid-1)
+	specresp2e = np.ones(Ngrid-1) * specresp2[-1]
+	specresp = np.concatenate((specresps1,specresp1,specresp12,specresp2,specresp2e))
 
-    # make fits
-    hdu_lst = fits.HDUList()
+	# make fits
+	hdu_lst = fits.HDUList()
 
-    primary_hdu = fits.PrimaryHDU()
-    hdu_lst.append(primary_hdu)
+	primary_hdu = fits.PrimaryHDU()
+	hdu_lst.append(primary_hdu)
 
-    cols = [fits.Column(name="ENERG_LO", format="D", array=arfene_lo),
-            fits.Column(name="ENERG_HI", format="D", array=arfene_hi),
-            fits.Column(name="SPECRESP", format="D", array=specresp)]
-    hdu_specresp = fits.BinTableHDU.from_columns(cols, name="SPECRESP")
-    hdu_specresp.header["TELESCOP"] = "CONCAT"
-    hdu_specresp.header["INSTRUME"] = "CONCAT"
-    hdu_specresp.header["CHANTYPE"] = "PI"
-    hdu_specresp.header["DETCHANS"] = len(specresp)
-    hdu_specresp.header["HDUCLASS"] = "OGIP"
-    hdu_specresp.header["HDUCLAS1"] = "RESPONSE"
-    hdu_specresp.header["HDUCLAS2"] = "SPECRESP"
-    hdu_specresp.header["HDUVERS"] = "1.1.0"
-    hdu_specresp.header["EXPOSURE"] = expo
-    hdu_specresp.header["CREATOR"] = "XSTACK"
-    hdu_lst.append(hdu_specresp)
+	cols = [fits.Column(name="ENERG_LO", format="D", array=arfene_lo),
+			fits.Column(name="ENERG_HI", format="D", array=arfene_hi),
+			fits.Column(name="SPECRESP", format="D", array=specresp)]
+	hdu_specresp = fits.BinTableHDU.from_columns(cols, name="SPECRESP")
+	hdu_specresp.header["TELESCOP"] = "CONCAT"
+	hdu_specresp.header["INSTRUME"] = "CONCAT"
+	hdu_specresp.header["CHANTYPE"] = "PI"
+	hdu_specresp.header["DETCHANS"] = len(specresp)
+	hdu_specresp.header["HDUCLASS"] = "OGIP"
+	hdu_specresp.header["HDUCLAS1"] = "RESPONSE"
+	hdu_specresp.header["HDUCLAS2"] = "SPECRESP"
+	hdu_specresp.header["HDUVERS"] = "1.1.0"
+	hdu_specresp.header["EXPOSURE"] = expo
+	hdu_specresp.header["CREATOR"] = "XSTACK"
+	hdu_lst.append(hdu_specresp)
 
-    hdu_lst.writeto(f"{out_name}", overwrite=True)
+	hdu_lst.writeto(f"{out_fname}", overwrite=True)
 
-    return specresp
+	return specresp

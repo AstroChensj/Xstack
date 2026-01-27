@@ -4,11 +4,8 @@ Configuration files for Xstack.
 """
 import os
 
-version_file = os.path.join(os.path.dirname(__file__), "VERSION")
-with open(version_file) as f:
-    lines = f.readlines()
-    VERSION = lines[0].strip()
-    LASTUPDATE = lines[1].strip()
+VERSION = "1.1.2"
+LASTUPDATE = "2026/1/17"
 WEB = "https://github.com/AstroChensj/Xstack"
 
 

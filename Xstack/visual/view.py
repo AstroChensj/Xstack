@@ -414,7 +414,7 @@ def valid_energy_range_plot(
     eene = np.logspace(np.log10(0.2),np.log10(ene_ce.max()),18)
     eelo = eene[:-1]
     eehi = eene[1:]
-    make_grpflg(src_name,grp_name,method="EDGE",rmf_file=rmf_name,eelo=eelo,eehi=eehi)
+    make_grpflg(src_name,grp_name,method="EDGE",rmf_fname=rmf_name,eelo=eelo,eehi=eehi)
     with fits.open(grp_name) as hdu:
         data = hdu[1].data
     grpflg = data["GROUPING"]

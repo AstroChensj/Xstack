@@ -18,9 +18,41 @@ from Xstack.utils.logger import utc_now_iso
 from Xstack.config import VERSION,LASTUPDATE,WEB
 
 
+def read_pi(
+        pi_fname,
+):
+    """
+    Read PI spectrum file.
+
+    Parameters
+    ----------
+    pi_fname : str
+        Observed-frame pi file to be shifted, in standard OGIP format.
+
+    Returns
+    -------
+    pi_chan : list
+        PI channel.
+    pi_coun : list
+        Photon counts in each channel.
+    z : float
+        Redshift if exists.
+    """
+    with fits.open(pi_fname) as hdu:
+        pi = hdu["SPECTRUM"].data
+        head = hdu["SPECTRUM"].header
+    #--- read channel and counts
+    pi_chan = pi["CHANNEL"]     # pi_chan starts from 0/1, depending on TLMIN1
+    pi_coun = pi["COUNTS"]      # the obs-frame photon counts
+    #--- read redshift if exists
+    z = head.get("REDSHIFT",-999.0)
+
+    return pi_chan,pi_coun,z
+
+
 def shift_pi(
-        pi_file,z,
-        ene_lo=None,ene_hi=None,ene_ce=None,ene_wd=None,rmf_file=None,
+        pi_fname,z,
+        ene_lo=None,ene_hi=None,ene_ce=None,ene_wd=None,rmf_fname=None,
         ene_trc=None,
 ):
     """
@@ -28,7 +60,7 @@ def shift_pi(
     
     Parameters
     ----------
-    pi_file : str
+    pi_fname : str
         Observed-frame pi file to be shifted, in standard OGIP format.
     z : float
         Redshift.
@@ -40,7 +72,7 @@ def shift_pi(
         (`ene_lo` + `ene_hi`) / 2
     ene_wd : numpy.ndarray, optional
         (`ene_hi` - `ene_lo`)
-    rmf_file : str, optional
+    rmf_fname : str, optional
         RMF file defining channel-energy conversion, in standard OGIP 
         format. This is optional, unless `ene_lo` `ene_hi` are not
         specified.
@@ -61,7 +93,7 @@ def shift_pi(
     """
     #--- read rmf file for energy edges if they are not provided
     if (ene_lo is None) or (ene_hi is None):
-        with fits.open(rmf_file) as hdu:
+        with fits.open(rmf_fname) as hdu:
             ebo = hdu["EBOUNDS"].data
         ene_lo = ebo["E_MIN"]
         ene_hi = ebo["E_MAX"]
@@ -75,10 +107,11 @@ def shift_pi(
     ene_lbound = ene_hi.min()   # set lower and upper bound of energy to avoid overflow issues
     
     #--- read pi file
-    with fits.open(pi_file) as hdu:
-        pi = hdu["SPECTRUM"].data
-    pi_chan = pi["CHANNEL"]     # pi_chan starts from 0/1, depending on TLMIN1
-    pi_coun = pi["COUNTS"]      # the obs-frame photon counts
+    # with fits.open(pi_fname) as hdu:
+    #     pi = hdu["SPECTRUM"].data
+    # pi_chan = pi["CHANNEL"]     # pi_chan starts from 0/1, depending on TLMIN1
+    # pi_coun = pi["COUNTS"]      # the obs-frame photon counts
+    pi_chan,pi_coun,_ = read_pi(pi_fname)
     chan_id = np.arange(len(pi_chan))
 
     #--- truncate below ene_trc
@@ -207,7 +240,7 @@ def calc_bkgpi_error(bkgpi_lst,bkgscal_lst,Nbkggrp=10):
     return bkgpi_stk,bkgpierr_stk
 
 
-def get_bkgscal(src_file,bkg_file=None):
+def get_bkgscal(src_fname,bkg_fname=None):
     """
     Get background-to-source scaling ratio, which is calculated as:
 
@@ -221,11 +254,11 @@ def get_bkgscal(src_file,bkg_file=None):
         
     Parameters
     ----------
-    src_file : str
+    src_fname : str
         Source PI spectrum name.
-    bkg_file : str, optional
+    bkg_fname : str, optional
         Background PI spectrum name. If not specified, will look for it 
-        from the header of `src_file`.
+        from the header of `src_fname`.
     
     Returns
     -------
@@ -257,16 +290,16 @@ def get_bkgscal(src_file,bkg_file=None):
     exactly same scaling formula as for the point sources (`BACKSCAL` 
     * `EXPOSURE` * `AREASCAL`).
     """
-    with fits.open(src_file) as hdu:
+    with fits.open(src_fname) as hdu:
         head = hdu["SPECTRUM"].header
     src_expo = head["EXPOSURE"]
     src_areascal = head["AREASCAL"]
     src_backscal = head["BACKSCAL"]
 
-    if bkg_file is None:
-        bkg_file = head["BACKFILE"]
-    assert os.path.exists(bkg_file), "Background file does not exist!"
-    with fits.open(bkg_file) as hdu:
+    if bkg_fname is None:
+        bkg_fname = head["BACKFILE"]
+    assert os.path.exists(bkg_fname), "Background file does not exist!"
+    with fits.open(bkg_fname) as hdu:
         head = hdu["SPECTRUM"].header
     bkg_expo = head["EXPOSURE"]
     bkg_areascal = head["AREASCAL"]
@@ -276,13 +309,13 @@ def get_bkgscal(src_file,bkg_file=None):
     return bkgscal
 
 
-def get_expo(src_file):
+def get_expo(src_fname):
     """
     Get source exposure time.
 
     Parameters
     ----------
-    src_file : str
+    src_fname : str
         Source PI spectrum name.
 
     Returns
@@ -290,20 +323,20 @@ def get_expo(src_file):
     src_expo : float
         Source exposure time.
     """
-    src_expo = fits.getval(src_file,keyword="EXPOSURE",extname="SPECTRUM")
+    src_expo = fits.getval(src_fname,keyword="EXPOSURE",extname="SPECTRUM")
     if src_expo == 0:
-        print(f"Please check {src_file}: why EXPOSURE == 0?")
+        print(f"Please check {src_fname}: why EXPOSURE == 0?")
     return src_expo
 
 
-def get_rega(src_file):
+def get_rega(src_fname):
     """
     Get source geometric area, from the non-standard keyword `REGAREA`.
     For non-eROSITA instrument, return 1.
 
     Parameters
     ----------
-    src_file : str
+    src_fname : str
         Source PI spectrum name.
     
     Returns
@@ -312,7 +345,7 @@ def get_rega(src_file):
         Source region area [deg^2].
     """
     try:
-        src_rega = fits.getval(src_file,keyword="REGAREA",extname="SPECTRUM")
+        src_rega = fits.getval(src_fname,keyword="REGAREA",extname="SPECTRUM")
     except Exception as e:
         src_rega = 1
     return src_rega
@@ -370,8 +403,9 @@ def make_bkggrpflg(bkgscal_lst,Nbkggrp=10):
 
 
 def write_pi(
-        chan,pi,pierr=None,pi_name="stacked_pi.fits",
-        expo=10,rega=1,bkgpi_name=None,rmf_name=None,arf_name=None,
+        chan,pi,pierr=None,pi_fname="stacked_pi.fits",
+        expo=10,rega=1,bkgpi_fname=None,rmf_fname=None,arf_fname=None,
+        spec_type="STACKED",z=None,
 ):
     """
     Write PI spectrum file according to OGIP standards.
@@ -385,18 +419,23 @@ def write_pi(
         Stacked src spectrum counts.
     pierr : numpy.ndarray, optional
         Stacked src spectrum uncertainty. Defaults to None (use XSPEC POISSERR by default).
-    pi_name : str, optional
+    pi_fname : str, optional
         Output src spectrum name. Defaults to "stacked_srcpi.fits".
     expo : int or float, optional
         Stacked exposure. Defaults to 10.
     rega : int or float, optional
         Stacked region area. Defaults to 1.
-    bkgpi_name : str, optional
+    bkgpi_fname : str, optional
         Stacked bkg PI filename. Defaults to None.
-    rmf_name : str, optional
+    rmf_fname : str, optional
         Stacked RMF filename. Defaults to None.
-    arf_name : str, optional
+    arf_fname : str, optional
         Stacked ARF filename. Defaults to None.
+    spec_type : str, optional
+        "STACKED" for stacked spectrum, or "RESTFRAM" for individual rest-frame spectrum.
+        Counts are stored as integer in "STACKED" mode, while float in "RESTFRAM" mode. 
+    z : float, optional
+        Redshift.
 
     Returns
     -------
@@ -410,32 +449,34 @@ def write_pi(
     if pierr is not None:
         cols = [
             fits.Column(name="CHANNEL",format="I",array=chan),
-            fits.Column(name="COUNTS",format="J",array=pi),
+            fits.Column(name="COUNTS",format="J" if spec_type=="STACKED" else "D",array=pi),
             fits.Column(name="STAT_ERR", format="D", array=pierr),
         ]
     else:
         cols = [
             fits.Column(name="CHANNEL",format="I",array=chan),
-            fits.Column(name="COUNTS",format="J",array=pi),
+            fits.Column(name="COUNTS",format="J" if spec_type=="STACKED" else "D",array=pi),
         ]
     hdu_spectrum = fits.BinTableHDU.from_columns(cols, name="SPECTRUM")
     hdu_lst.append(hdu_spectrum)
 
     # PI header following OGIP standards
     # https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, OGIP/92-007: "The OGIP Spectral File Format"
-    hdu_spectrum.header["TELESCOP"] = "STACKED"
-    hdu_spectrum.header["INSTRUME"] = "STACKED"
+    hdu_spectrum.header["TELESCOP"] = spec_type
+    hdu_spectrum.header["INSTRUME"] = spec_type
     hdu_spectrum.header["EXPOSURE"] = (expo, f"stacked exposure time [s]")
     hdu_spectrum.header["REGAREA"] = (rega, f"stacked region area [deg^2]")
-    if bkgpi_name is not None:
+    if z is not None:
+        hdu_spectrum.header["REDSHIFT"] = z
+    if bkgpi_fname is not None:
         # we assume all files under the same path for xspec convenience
-        hdu_spectrum.header["BACKFILE"] = (os.path.basename(bkgpi_name), f"associated background PI spectrum")   
+        hdu_spectrum.header["BACKFILE"] = (os.path.basename(bkgpi_fname), f"associated background PI spectrum")   
     hdu_spectrum.header["BACKSCAL"] = 1.0
     hdu_spectrum.header["CORRSCAL"] = 1.0
-    if rmf_name is not None:
-        hdu_spectrum.header["RESPFILE"] = (os.path.basename(rmf_name), f"associated response matrix file")
-    if arf_name is not None:
-        hdu_spectrum.header["ANCRFILE"] = (os.path.basename(arf_name), f"associated ancillary response file")
+    if rmf_fname is not None:
+        hdu_spectrum.header["RESPFILE"] = (os.path.basename(rmf_fname), f"associated response matrix file")
+    if arf_fname is not None:
+        hdu_spectrum.header["ANCRFILE"] = (os.path.basename(arf_fname), f"associated ancillary response file")
     hdu_spectrum.header["AREASCAL"] = 1.0
     hdu_spectrum.header["HDUCLASS"] = "OGIP"
     hdu_spectrum.header["HDUCLAS1"] = "SPECTRUM"
@@ -449,14 +490,15 @@ def write_pi(
     hdu_spectrum.header["HDUCLAS3"] = "COUNT"
     hdu_spectrum.header["HISTORY"] = f"{utc_now_iso()}: stacked source PI spectrum created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
     
-    hdu_lst.writeto(f"{pi_name}",overwrite=True)
+    hdu_lst.writeto(f"{pi_fname}",overwrite=True)
 
     return
 
 
 def write_bkgpi(
-        chan,bkgpi,bkgpierr,bkgpi_name="stacked_bkgpi.fits",
+        chan,bkgpi,bkgpierr,bkgpi_fname="stacked_bkgpi.fits",
         expo=10,rega=1,
+        spec_type="STACKED",z=None,
 ):
     """
     Write bkg PI spectrum file according to OGIP standards.
@@ -470,12 +512,17 @@ def write_bkgpi(
         Stacked bkg spectrum counts.
     bkgpierr : numpy.ndarray
         Stacked bkg spectrum uncertainty.
-    bkgpi_name : str, optional
+    bkgpi_fname : str, optional
         Output bkg spectrum name. Defaults to "stacked_bkgpi.fits".
     expo : int or float, optional
         Stacked exposure. Defaults to 10.
     rega : int or float, optional
         Stacked region area. Defaults to 1.
+    spec_type : str, optional
+        "STACKED" for stacked spectrum, or "RESTFRAM" for individual rest-frame spectrum.
+        Counts are stored as float regardless.
+    z : float, optional
+        Redshift.
 
     Returns
     -------
@@ -496,10 +543,12 @@ def write_bkgpi(
 
     # PI header following OGIP standards 
     # https://heasarc.gsfc.nasa.gov/docs/heasarc/caldb/caldb_doc.html, OGIP/92-007: "The OGIP Spectral File Format"
-    hdu_spectrum.header["TELESCOP"] = "STACKED"
-    hdu_spectrum.header["INSTRUME"] = "STACKED"
+    hdu_spectrum.header["TELESCOP"] = spec_type
+    hdu_spectrum.header["INSTRUME"] = spec_type
     hdu_spectrum.header["EXPOSURE"] = (expo, f"stacked exposure time [s]")
     hdu_spectrum.header["REGAREA"] = (rega, f"stacked region area [deg^2]")
+    if z is not None:
+        hdu_spectrum.header["REDSHIFT"] = z
     hdu_spectrum.header["BACKFILE"] = "None"
     hdu_spectrum.header["BACKSCAL"] = 1.0
     hdu_spectrum.header["CORRSCAL"] = 1.0
@@ -518,22 +567,22 @@ def write_bkgpi(
     hdu_spectrum.header["HDUCLAS3"] = "COUNT"
     hdu_spectrum.header["HISTORY"] = f"{utc_now_iso()}: stacked background PI spectrum created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
 
-    hdu_lst.writeto(f"{bkgpi_name}",overwrite=True)
+    hdu_lst.writeto(f"{bkgpi_fname}",overwrite=True)
 
     return
 
 
 
 #--- below for visualization purposes
-def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=None,bkg_name=None,min_net=0):
+def make_grpflg(src_fname,grp_fname=None,method="EDGE",rmf_fname="",eelo=None,eehi=None,bkg_fname=None,min_net=0):
     """
     Add `GROUPING` column to the source PI file.
     
     Parameters
     ----------
-    src_name : str
+    src_fname : str
         Input source PI file name.
-    grp_name : str, optional
+    grp_fname : str, optional
         Output grouped PI file name. If not specified, will not create 
         output file.
     method : str, optional
@@ -541,24 +590,24 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
         - `EDGE`: Group by fixed energy bin edges. Edges provided by 
           `eelo` and `eehi`.
         - `MIN_NET`: Group by minimum net counts (src-bkg*bkgscal). 
-           Needs to specify the bkg_name and min_net in each group.
-    rmf_file : str, optional
+           Needs to specify the bkg_fname and min_net in each group.
+    rmf_fname : str, optional
         (for `EDGE` method) RMF file name. If not specified, the code 
-        will automatically search the header of `src_name`.
+        will automatically search the header of `src_fname`.
     eelo : numpy.ndarray, optional
         (for `EDGE` method) Lower edge of fixed energy bin.
     eehi : numpy.ndarray, optional
         (for `EDGE` method) Upper edge of fixed energy bin.
-    bkg_name : str, optional
+    bkg_fname : str, optional
         Background file name used in `MIN_NET` mode. Defaults to None. 
-        If not specified, will look for it in the header of `src_name`.
+        If not specified, will look for it in the header of `src_fname`.
     min_net : float or int, optional
         Minimum net counts in each group in `MIN_NET` mode. Defaults to 0.
     
     Returns
     -------
     grpflg : numpy.ndarray
-        `GROUPING` column written in `grp_name`.
+        `GROUPING` column written in `grp_fname`.
 
     Available Methods
     -----------------
@@ -569,7 +618,7 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
         if (eelo is None) or (eehi is None):
             raise Exception("Please specify `eelo` and `eehi` in method `EDGE`!")
         # find channel energy in EBOUNDS extension of RMF file
-        with fits.open(src_name) as hdu:
+        with fits.open(src_fname) as hdu:
             data = hdu["SPECTRUM"].data
             head = hdu["SPECTRUM"].header
             chan = data["CHANNEL"]
@@ -578,15 +627,15 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
             except Exception as e:
                 src_rmf = ""
         
-        # the RMF file must either be specified as `rmf_file`, or specified in the header of `src_name`
-        if os.path.exists(rmf_file):
+        # the RMF file must either be specified as `rmf_fname`, or specified in the header of `src_fname`
+        if os.path.exists(rmf_fname):
             pass
         elif os.path.exists(src_rmf):
-            rmf_file = src_rmf
+            rmf_fname = src_rmf
         else:
-            raise Exception(f"Either the RMF file is not specified as `rmf_file`, or the one in {src_name} does not exist!")
+            raise Exception(f"Either the RMF file is not specified as `rmf_fname`, or the one in {src_fname} does not exist!")
         
-        with fits.open(rmf_file) as hdu:
+        with fits.open(rmf_fname) as hdu:
             ebo = hdu["EBOUNDS"].data
         ene_lo = ebo["E_MIN"]
         ene_hi = ebo["E_MAX"]
@@ -612,9 +661,9 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
             eeid_bk.append(eeid[mask])
         
         # create output file
-        if grp_name is not None:
-            shutil.copy(src_name,grp_name)
-            with fits.open(grp_name,mode="update") as hdu:
+        if grp_fname is not None:
+            shutil.copy(src_fname,grp_fname)
+            with fits.open(grp_fname,mode="update") as hdu:
                 SPECTRUM = hdu[1]
                 if "GROUPING" in SPECTRUM.columns.names:
                     SPECTRUM.columns.del_col("GROUPING")    # remove "GROUPING" column if it exists beforehand
@@ -624,20 +673,20 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
         return grpflg
     
     elif method == "MIN_NET":
-        with fits.open(src_name) as hdu:
+        with fits.open(src_fname) as hdu:
             data = hdu["SPECTRUM"].data
             src_chan = data["CHANNEL"]
             src_coun = data["COUNTS"]
             head = hdu["SPECTRUM"].header
-        if bkg_name is None:
-            bkg_name = head["BACKFILE"]
-        assert os.path.exists(bkg_name), "Background file does not exist!"
-        with fits.open(bkg_name) as hdu:
+        if bkg_fname is None:
+            bkg_fname = head["BACKFILE"]
+        assert os.path.exists(bkg_fname), "Background file does not exist!"
+        with fits.open(bkg_fname) as hdu:
             data = hdu["SPECTRUM"].data
             bkg_chan = data["CHANNEL"]
             bkg_coun = data["COUNTS"]
         assert len(src_chan) == len(bkg_chan), f"src channel ({len(src_chan)}) and bkg channel ({len(bkg_chan)}) do not match!"
-        bkgscal = get_bkgscal(src_name,bkg_name)
+        bkgscal = get_bkgscal(src_fname,bkg_fname)
 
         # make grouping flag
         grpflg = np.ones(len(src_chan))
@@ -651,9 +700,9 @@ def make_grpflg(src_name,grp_name=None,method="EDGE",rmf_file="",eelo=None,eehi=
                 grpflg[i] = -1  # -1 for continuing the group
 
         # create output file
-        if grp_name is not None:
-            shutil.copy(src_name,grp_name)
-            with fits.open(grp_name,mode="update") as hdu:
+        if grp_fname is not None:
+            shutil.copy(src_fname,grp_fname)
+            with fits.open(grp_fname,mode="update") as hdu:
                 SPECTRUM = hdu[1]
                 if "GROUPING" in SPECTRUM.columns.names:
                     SPECTRUM.columns.del_col("GROUPING")    # remove "GROUPING" column if it exists beforehand

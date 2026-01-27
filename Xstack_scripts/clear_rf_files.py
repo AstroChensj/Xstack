@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""
+Clear rest-frame files for a given catalog.
+"""
+import fitsio
+import os
+import sys
+import glob
+import subprocess
+from tqdm import tqdm
+import argparse
+
+class HelpfulParser(argparse.ArgumentParser):
+	def error(self, message):
+		sys.stderr.write(f"error: {message}\n")
+		self.print_help()
+		sys.exit(2)
+
+parser = HelpfulParser(description=__doc__,
+	epilog="""Shi-Jiang Chen, Johannes Buchner and Teng Liu (C) 2025 <JohnnyCsj666@gmail.com>""",
+	formatter_class=argparse.RawDescriptionHelpFormatter)
+
+
+parser.add_argument("filelist",type=str,help="text file containing the file names")
+parser.add_argument("--remove",action="store_true",help="actually deleting individual rest-frame files")
+args = parser.parse_args()
+
+
+def main():
+	with open(args.filelist,"r") as f:
+		lines = f.readlines()
+	filename_lst = [line.strip() for line in lines if line.strip()]
+	to_delete = []
+
+	print("Reading files ...")
+	print("To actually delete files, do `clear_rf_files filelist --remove`")
+	for filename in tqdm(filename_lst):
+		#--- read src .rf, .rf.rsp
+		to_delete.extend(glob.glob(f"{filename}.rf*"))
+		#--- read bkg .rf
+		path = os.path.dirname(filename)
+		with fitsio.FITS(filename) as ff:
+			hdr = ff["SPECTRUM"].read_header()
+		backfile = hdr.get("BACKFILE","")
+		if backfile:
+			backfile = os.path.join(path,backfile)
+			to_delete.extend(glob.glob(f"{backfile}.rf*"))
+
+	# print once
+	for p in to_delete:
+		print(p)
+
+	# delete in bulk
+	if args.remove and to_delete:
+		# xargs-style batching (no giant argv)
+		proc = subprocess.Popen(["xargs","-0","rm","-f","--"],stdin=subprocess.PIPE)
+		proc.stdin.write(("\0".join(to_delete)+"\0").encode())
+		proc.stdin.close()
+		proc.wait()
+		print(f"{len(to_delete)} .rf files deleted.")
+		
+if __name__ == "__main__":
+	main()
