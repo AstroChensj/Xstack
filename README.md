@@ -148,6 +148,7 @@ The output will be:
   |`--ene_trc`|energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)|0.0|
   |`--extended`|whether or not this is an extended source|`False` (point source)|
   |`--same_rmf`|specify the name of common rmf, if all sources are to use the same rmf|None|
+  |`--do_cache`|save and load individual rest-frame files|False|
   |`--bootstrap`|activate `bootstrap` mode|False|
   |`--num_bootstrap`|number of bootstrap experiments in `bootstrap` mode|10|
   |`--bootstrap_portion`|portion of sources to resample in each bootstrap experiment|1.0|
