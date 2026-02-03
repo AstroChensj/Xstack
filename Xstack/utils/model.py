@@ -20,15 +20,20 @@ def align_model(oarfene_lo,oarfene_hi,omodel,narfene_lo,narfene_hi):
     ----------
     oarfene_lo : numpy.ndarray
         Lower edge of original model energy bin.
+
     oarfene_hi : numpy.ndarray
         Upper edge of original model energy bin.
+
     omodel : numpy.ndarray
         Model flux defined on original model energy bin.
+
     narfene_lo : numpy.ndarray
         Lower edge of new model energy bin.
+
     narfene_hi : numpy.ndarray
         Upper edge of new model energy bin.
 
+        
     Returns
     -------
     nmodel : numpy.ndarray
@@ -77,14 +82,19 @@ def fold_model(modelfile,rmffile,arffile,out_name):
         Name of file storing input models to be folded. Different 
         extensions store different models. Different columns store 
         different components. 
+
     rmffile : str
         Name of RMF file.
+
     arffile : str
         Name of ARF file.
+
     out_name : str
         Output fits name.
+
     usecpu : int
         Number of CPUs used in folding process.
+        
 
     Returns
     -------

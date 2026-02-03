@@ -12,8 +12,11 @@ def calc_bootstrap_weights(Nsrc,bootstrap_portion=1.0,rng=None):
     Parameters
     ----------
     Nsrc : int
+
     bootstrap_portion : float, optional
+
     rng : numpy.random._generator.Generator, optional
+    
 
     Returns
     -------

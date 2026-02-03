@@ -16,13 +16,17 @@ def write_fene(srcid_lst,arffene_lst,fene_lst,fene_fname="./stacked_fene.fits"):
 	----------
 	srcid_lst : list or numpy.ndarray
 		The source ID list.
+
 	arffene_lst : list or numpy.ndarray
 		The first energy of each sources"s ARF specresp.
+
 	fene_lst : list or numpy.ndarray
 		The first energy of each source"s PI spectrum.
+
 	fene_fname : str
 		The output fits name.
 
+		
 	Returns
 	-------
 	None

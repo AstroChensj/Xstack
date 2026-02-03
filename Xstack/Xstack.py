@@ -61,19 +61,26 @@ class XstackRunner:
         ----------
         pifile_lst : list or numpy.ndarray
             The input PI spectrum file list.
+
         arffile_lst : list or numpy.ndarray
             The input ARF file list.
+
         rmffile_lst : list or numpy.ndarray
             The input RMF file list.
+
         z_lst : list or numpy.ndarray
             The redshift list.
+
         bkgpifile_lst : list or numpy.ndarray, optional
             The input background PI spectrum list. Defaults to None.
+
         nh_lst : list or numpy.ndarray, optional
             The Galactic absorption column density list in units of 
-            [1 cm^-2]. Defaults to None.
+            1 cm^{-2}. Defaults to None.
+
         srcid_lst : list or numpy.ndarray, optional
             The source ID list. Defaults to None.
+
         rspwt_method : str, optional
             Method for calculating ARFSCAL. Defaults to `SHP`. Available 
             methods are:
@@ -85,44 +92,72 @@ class XstackRunner:
             - `LMN`: assuming all sources have same spectral shape and 
               luminosity ([erg/s] for point sources while [erg/s/deg^2] 
               for extended sources)
+
         rspproj_gamma : float, optional
             The prior photon index value for projecting RSP matrix onto 
             the output energy channel. This is used in the `SHP` method, 
             to calculate the weight of each response. Defaults to 2.0 
             (typical for AGN).
+
         int_rng : tuple of (float,float), optional
-            The energy (keV) range for computing flux. Defaults to 
-            (1.0,2.3).
+            The energy (keV) range for computing flux under `SHP` mode. 
+            Defaults to (1.0,2.3).
+
         sample_rmf : str, optional
             Name of sample RMF. Defaults to None.
+
         sample_arf : str, optional
             Name of sample ARF. Defaults to None.
+
         nh_file : str, optional
             Galactic absorption profile (absorption factor vs. energy) 
             at 1e20 cm^{-2}. If specified, galactic absorption correction 
-            will be applied on the ARF before shifting.
+            will be applied on the ARF before rest-frame shifting.
             - Should be in .txt format. 
             - Should also contain the following columns in the first 
               extension: `nhene_ce`, `nhene_wd`, `factor`.
             - `factor` should indicate the absorption factor when nh=1e20.
             - An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` 
               with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
+
         Nbkggrp : int, optional
             Number of groups with similar background-to-source scaling 
             ratio. Defaults to 10.
+
         ene_trc : float, optional
             Truncate energy below which manually set ARF and PI counts to 
             zero. For eROSITA, `ene_trc` is typically set as 0.2 keV. 
             Defaults to None.
+
         extended : bool, optional
             Whether or not are the sources to be stacked extended sources. 
             The calculation of response weights would be affected. 
             Defaults to False, i.e., they are point sources.
+
         nthreads : int, optional
             Number of CPUs used in shifting RSP.
+
+        bootstrap : bool, optional
+            Whether or not to do bootstrap. Defaults to False.
+
+        num_bootstrap : int, optional
+            Number of bootstrap realizations when `bootstrap` mode is activated.
+            Defaults to 10.
+
+        bootstrap_portion : float, optional
+            Fraction of sources to be sampled in each bootstrap realization.
+            Defaults to 1.
+
         prefix : str, optional
             Prefix for output stacked PI, BKGPI, ARF, and RMF files. 
-            Defaults to './results/stacked_'
+            Defaults to './results/stacked_'.
+
+        do_cache : bool, optional
+            Whether or not to store and read the intermediate rest-frame files 
+            for each individual source. If true, source-wise rest-frame files 
+            will be saved under the same path as `pifile`. This will save a lot 
+            of running time, at the cost of additional disk space (and burden on
+            I/O). Defaults to False.
         """
         #--- create output directory and define logger
         self.outdir = os.path.dirname(prefix)
@@ -256,6 +291,29 @@ class XstackRunner:
 
         Returns
         -------
+        pi_stk_rlz : numpy.ndarray
+            Stacked PI spectra from all realizations, with shape (num_bootstrap, Nchan).
+            Note that if `bootstrap`==False, the shape is simply (1, Nchan).
+
+        pierr_stk_rlz : numpy.ndarray
+            Stacked PI err spectra from all realizations, with shape (num_bootstrap, Nchan).
+            Note that if `bootstrap`==False, the shape is simply (1, Nchan).
+
+        bkgpi_stk_rlz : numpy.ndarray
+            Stacked bkg PI spectra from all realizations, with shape (num_bootstrap, Nchan).
+            Note that if `bootstrap`==False, the shape is simply (1, Nchan).
+
+        bkgpierr_stk_rlz : numpy.ndarray
+            Stacked bkg PI err spectra from all realizations, with shape (num_bootstrap, Nchan).
+            Note that if `bootstrap`==False, the shape is simply (1, Nchan).
+
+        specresp_stk_rlz : numpy.ndarray
+            Stacked ARFs from all realizations, with shape (num_bootstrap, Niene).
+            Note that if `bootstrap`==False, the shape is simply (1, Niene).
+
+        prob_stk_rlz : numpy.ndarray
+            Stacked RMF matrices from all realizations, with shape (num_bootstrap, Niene, Nene).
+            Note that if `bootstrap`==False, the shape is simply (1, Niene, Nene).
         """
         self.main_logger.info("#######################################################")
         self.main_logger.info("################ Welcome to Xstack! ###################")
@@ -455,30 +513,44 @@ class XstackRunner:
     def _run_single_source(self,i):
         """
         Shift single spectrum & response to rest-frame.
-        This is an internal function of `run`.
+        This is an internal function for `run`.
+
+        Paramters
+        ---------
+        i : int
+            Source index.
 
         Returns
         -------
         pi_sft : numpy.ndarray
             Rest-frame PI spectrum.
+
         bkgpi_sft : numpy.ndarray
             Rest-frame bkg PI spectrum.
+
         bkgscal : float
             Background-to-source scaling ratio.
+
         rspmat_sft : numpy.ndarray
             Rest-frame full response matrix.
+
         rspwt : float
             Response scaling weight. Note, a further renormalization 
             will be needed after stacking.
+
         arffene : float
             First contributing energy from ARF.
+
         fene : float
             First contributing energy from rest-frame PI (i.e., which 
             energy starts to contribute at least 1 photon).
+
         expo : float
             Exposure.
+
         rega : float
             Region area.
+
         msg: str
             Error message.
         """
@@ -611,20 +683,38 @@ class XstackRunner:
         Parameters
         ----------
         infile : str
+            Input PI file name.
+
         outfile : str
+            Rest-frame PI file name.
+
         z : float
+            Redshift.
+
         do_cache: bool
+            Whether or not to store and read the intermediate rest-frame files 
+            for each individual source. If true, source-wise rest-frame files 
+            will be saved under the same path as `pifile`. This will save a lot 
+            of running time, at the cost of additional disk space (and burden on
+            I/O).
+
         shift_pi_kwargs : dict
+            Parameter dictionary for `shift_pi`.
+
         write_pi_kwargs : dict
+            Parameter dictionary for `write_pi`.
 
         Returns
         -------
         chan : numpy.ndarray
             Rest-frame channel.
+
         pi_sft : numpy.ndarray
             Photon counts in each rest-frame channel.
+
         z_cached : float
             Redshift.
+
         mismatch_flag : bool
             True if there is a mismatch in redshift between the rest-frame file and input value. 
         """
@@ -653,17 +743,32 @@ class XstackRunner:
         Parameters
         ----------
         outfile : str
+            Rest-frame rsp file name.
+
         z : float
+            Redshift.
+
         do_cache: bool
+            Whether or not to store and read the intermediate rest-frame files 
+            for each individual source. If true, source-wise rest-frame files 
+            will be saved under the same path as `pifile`. This will save a lot 
+            of running time, at the cost of additional disk space (and burden on
+            I/O). 
+
         shift_rsp_kwargs : dict
+            Parameter dictionary for `shift_rsp`.
+
         write_rsp_kwargs : dict
+            Parameter dictionary for `write_rsp`.
 
         Returns
         -------
         rspmat_sft : numpy.ndarray
-		    Shifted 2D RSP matrix.
+		    Rest-frame 2D RSP matrix.
+            
         z_cached : float
             Redshift.
+            
         mismatch_flag : bool
             True if there is a mismatch in redshift between the rest-frame file and input value. 
         """

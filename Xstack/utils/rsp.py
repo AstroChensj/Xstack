@@ -29,10 +29,12 @@ def read_rsp(rsp_fname):
     rsp_fname : str
         RMF or RSP file name.
 
+		
     Returns
     -------
     prob : numpy.ndarray
 		RMF 2D probability matrix, or RSP 2D matrix.
+
     z : float
         Redshift if exists.
 	"""
@@ -55,7 +57,7 @@ def shift_rsp(
 		ene_lo=None,ene_hi=None,
 ):
 	"""
-	Shift the ARF&RMF. This is literally done by three steps: 
+	Rest-frame shifting the ARF&RMF. This is literally done by three steps: 
 	1. Combine input ARF and RMF into a single RSP matrix (full response);
 	2. Shift in the direction of output channel energy. That is to say, 
 	   shift and broaden the probability profile for each input energy 
@@ -70,10 +72,13 @@ def shift_rsp(
 	----------
 	arf_fname : str
 		The ARF file name.
+
 	rmf_fname : str
 		The RMF file name.
+
 	z : float
 		Redshift.
+
 	nh_file : str, optional
 		Galactic absorption profile (absorption factor vs. energy). If 
 		specified, galactic absorption correction will be applied on the 
@@ -84,14 +89,17 @@ def shift_rsp(
 		- `factor` should indicate the absorption factor when nh=1e20.
 		- An easy way to obtain the `nh_file`: iplot `tbabs*powerlaw` 
 		  with `Nh`=1e20 and `PhoIndex`=0.0, `Norm`=1 in Xspec.
+
 	nh : float, optional
 		The galactic absorption nh of the source (e.g. 3e20). Defaults 
 		to 1e20.
+
 	ene_trc : float, optional
 		Truncate energy below which manually set ARF and PI counts to 
 		zero. For eROSITA, `ene_trc` is typically 0.2 keV. Defaults to 
 		None.
 
+		
 	Returns
 	-------
 	rspmat_sft : numpy.ndarray
@@ -164,17 +172,23 @@ def shift_matrix(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
 	----------
 	prob : numpy.ndarray
 		The RMF 2D probability matrix, or the RSP 2D matrix.
+
 	iene_lo : numpy.ndarray
 		Lower edge of input model energy (ARF energy) bin.
+
 	iene_hi : numpy.ndarray
 		Upper edge of input model energy (ARF energy) bin.
+
 	ene_lo : numpy.ndarray
 		Lower edge of output channel energy bin.
+
 	ene_hi : numpy.ndarray
 		Upper edge of output channel energy bin.
+
 	z : float
 		Redshift.
 
+		
 	Returns
 	-------
 	prob_sft : numpy.ndarray
@@ -272,20 +286,28 @@ def compute_rspwt(
 	specresp : numpy.ndarray
 		RSP specresp projected on channel energy axis (cm^2 vs. channel 
 		energy). This is **not** simply the ARF curve.
+
 	pi : numpy.ndarray
 		PI spectrum.
+
 	z : float
 		Redshift.
+
 	bkgpi : numpy.ndarray
 		Background PI spectrum.
+
 	bkgscal : float
 		Background scaling-ratio.
+
 	expo : float
 		Exposure.
+
 	ene_wd : numpy.ndarray
 		Output channel energy bin width.
+
 	flg : numpy.ndarray
 		Output channel energy flag.
+
 	method : str
 		Method for calculating ARFSCAL. Available methods are:
 		- `SHP`: assuming all sources have same spectral shape
@@ -299,28 +321,34 @@ def compute_rspwt(
 			  units of [erg/s].
 			+ For extended sources (`extended`==True), luminosity is in 
 			  units of [erg/s/deg^2].
+
 	extended : bool, optional
 		Whether or not the source is extended. Defaults to False, i.e., 
 		a point source.
+
 	rega : int or float, optional
 		`REGAREA` list. Used when `extended`==True.
 
+		
 	Returns
 	-------
 	rspwt : numpy.ndarray
 		The RSP weight for each source.
+
 	rspnorm : float
 		The RSP weight normalization. This is only useful for `SHP` mode.
+
 	expo_stacked : float
 		The final EXPOSURE to be written in the header of stacked PI
 		and RSP.
+
 	rega_stacked : float
 		The final REGAREA to be written in the header of stacked PI
 		and RSP.
 
 	Notes
 	-----
-	The first choice of `method` should be `SHP`, which starts from the 
+	The ideal choice of `method` should be `SHP`, which starts from the 
 	minimum assumption and thus gives the most unbiased results on 
 	spectral shape. A caveat of `SHP` is that the individual spectrum 
 	should have sufficient photon counts (>~10), and the resulting 
@@ -334,7 +362,7 @@ def compute_rspwt(
 	sources lie around the detection flux limit, and should thus have 
 	similar flux.
 
-	`LMN` should only be used for rare case, where all sources to be 
+	`LMN` is similar to `FLX`, except it assumes all sources to be 
 	summed have similar luminosity. # Luminosity can be calcualted as
 	e.g., flux 0.5 2 --> luminosity in 0.5-2 keV band / 1e60 
 
@@ -394,16 +422,44 @@ def rescale_rspmat(rspmat,rspwt_lst,expo_lst,rega_lst,rspwt_method,extended=Fals
 	Parameters
 	----------
 	rspmat : numpy.ndarray
-		The RSP 2D probability matrix.
-	rspwt_lst : numpy.ndarray
-	expo_lst : numpy.ndarray
-	rega_lst : numpy.ndarray
-	rspwt_method : str
-	extended : bool
+		Stacked RSP 2D probability matrix.
 
+	rspwt_lst : numpy.ndarray
+		Response weighting factor for each source (to be rescaled).
+
+	expo_lst : numpy.ndarray
+		Exposure for each source.
+
+	rega_lst : numpy.ndarray
+		Region area parameter for each source. 
+		TODO: applicable only to eROSITA ... update for other inst?
+
+	rspwt_method : str
+		Response weighting method.
+
+	extended : bool, optional
+		Extended or not. Defaults to False
+
+		
 	Returns
 	-------
+	rspmat : numpy.ndarray
+		Rescaled RSP matrix.
 	
+	rspnorm : float
+		To prevent overflow of very large number in the case of `LMN` 
+		mode, the rescaled RSP matrix has been multiplied by a very small 
+		number. Multiply your `rspmat` by `rspnorm` to bring it back to 
+		the appropriate number. 
+
+	rspwt_lst : numpy.ndarray
+		List of response weighting factors.
+
+	expo_stk : float
+		Stacked exposure.
+
+	rega_stk : float
+		Stacked region area.
 	"""
 	if rspwt_method == "SHP":
 		# renormalize so that sum of rspwt_lst is 1
@@ -474,20 +530,27 @@ def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):
 	----------
 	specresp : numpy.ndarray
 		The ARF specresp to be corrected.
+
 	arfene_lo : numpy.ndarray
 		Lower edge of input model energy (ARF energy) bin.
+
 	arfene_hi : numpy.ndarray
 		Upper edge of input model energy (ARF energy) bin. Defaults to 
 		None.
+
 	factor : numpy.ndarray
 		Template galactic absorption profile at nh=1e20.
+
 	nhene_lo : numpy.ndarray
 		Lower edge of nh model energy bin.
+
 	nhene_hi : numpy.ndarray
 		Upper edge of nh model energy bin.
+
 	nh : float
 		Galactic nh of the source.
 
+		
 	Returns
 	-------
 	specresp_cor : numpy.ndarray
@@ -529,14 +592,19 @@ def project_rspmat(rspmat,ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="CHANNEL",
 	----------
 	rspmat : numpy.ndarray
 		The 2D RSP matrix.
+
 	ene_lo : numpy.ndarray
 		Lower edge of output channel energy bin.
+
 	ene_hi : numpy.ndarray
 		Upper edge of output channel energy bin.
+
 	arfene_lo : numpy.ndarray
 		Lower edge of input model energy (ARF energy) bin.
+
 	arfene_hi : numpy.ndarray
 		Upper edge of input model energy (ARF energy) bin.
+
 	proj_axis : str, optional
 		The projection axis. Available options are:
 		- `CHANNEL`: project on output channel energy axis. Note that to 
@@ -547,11 +615,13 @@ def project_rspmat(rspmat,ene_lo,ene_hi,arfene_lo,arfene_hi,proj_axis="CHANNEL",
 		   fact (folded model)/(model).
 		- `MODEL`: project on input model energy axis
 		Defaults to `CHANNEL`.
+
 	gamma : float, optional
 		The spectral slope. Defaults to 2.0. This is only used when 
 		`proj_axis` is `CHANNEL`. For AGN sources, a powerlaw with 
 		photon index of 2.0 is a good approximation.
 
+		
 	Returns
 	-------
 	rsp1d : numpy.ndarray
@@ -603,15 +673,18 @@ def get_prob(mat,ebo,f_chan_0=None):
 		- `F_CHAN`
 		- `N_CHAN`
 		- `MATRIX`
+
 	ebo : astropy.io.fits.FITS_rec
 		The `EBOUNDS` extension of a standard OGIP RMF file. Must include 
 		the following columns:
 		- `E_MIN` 
 		- `E_MAX`
+
 	f_chan_0 : int, optional
 		First channel index. Defaults to None. 
 		If not specified, will be determined from rmf file.
 
+		
 	Returns
 	-------
 	prob : numpy.ndarray
@@ -666,21 +739,27 @@ def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=None):
 	n_grp : int
 		`N_GRP` array of your specific input model energy, from `MATRIX` 
 		extension.
+
 	f_chan : int
 		`F_CHAN` array of your specific input model energy, from `MATRIX` 
 		extension.
+
 	n_chan : int
 		`N_CHAN` array of your specific input model energy, from `MATRIX` 
 		extension.
+
 	matrix1d : numpy.ndarray
 		`MATRIX` array of your specific input model energy, from `MATRIX` 
 		extension.
+
 	Nene : int
 		Length of output channel energy.
+
 	f_chan_0 : int, optional
 		The index number of the first output channel energy (0 or 1). 
 		Defaults to 0.
 
+		
 	Returns
 	-------
 	prob1d : numpy.ndarray
@@ -708,7 +787,22 @@ def get_prob1d(n_grp,f_chan,n_chan,matrix1d,Nene,f_chan_0=None):
 
 def extract_arf_rmf_from_rspmat(rspmat):
 	"""
+	Extract ARF and RMF from the full response RSP.
+
+	Parameters
+	----------
+	rspmat : numpy.ndarray
+		Full response 2D matrix.
+
 	
+	Returns
+	-------
+	specresp : numpy.ndarray
+		ARF effective area as a function of input energies (`iene`).
+
+	prob : numpy.ndarray
+		2D probability RMF matrix as a function of input (`iene`) and 
+		output (`ene`) energies.
 	"""
 	#--- ARF
 	specresp = np.sum(rspmat,axis=1)
@@ -744,19 +838,58 @@ def write_arf(
 	Parameters
 	----------
 	arfene_lo : numpy.ndarray
+		Lower edge of input model energy (ARF energy) bin, aka `iene_lo`.
+
 	arfene_hi : numpy.ndarray
+		Upper edge of input model energy (ARF energy) bin, aka `iene_hi`.
+
 	specresp : numpy.ndarray
+		Effective area defined within `arfene_lo` and `arfene_hi`.
+
 	arf_fname : str, optional
+		Output ARF name. Defaults to "stacked_arf.fits".
+
 	detchans : int, optional
+		Number of detected channels. This should be the length of PI spectral 
+		channels, or equivalently the length of `ene`. Defaults to 1000.
+
 	expo : int or float, optional
+		Exposure in units of s. Defaults to 10.
+
 	rega : int or float, optional
+		Region area in units of deg^2. Defaults to 1.
+
 	rspwt_method : str, optional
+		Response weighting method. Defaults to "SHP".
+
 	rspnorm : int or float, optional
+		To prevent overflow of very large number in the case of `LMN` 
+		mode, the rescaled RSP matrix has been multiplied by a very small 
+		number. Multiply your `rspmat` by `rspnorm` to bring it back to 
+		the appropriate number. Defaults to 1.
+
 	srcid_lst : numpy.ndarray, optional
+		Source id list. Defaults to None.
+
 	rspwt_lst : numpy.ndarray, optional
+		Response weighting factor list. Defaults to None.
+
 	pi_totcts_lst : numpy.ndarray, optional
+		PI spectrum total counts. Defaults to None.
+
 	bkgpi_totcts_lst : numpy.ndarray, optional
+		BKG PI spectrum total counts. Defaults to None.
+
 	flg : numpy.ndarray, optional
+		Which channels used in `SHP` mode in calculating response weighting
+		factors. Defaults to None.
+
+	spec_type : str, optional
+		"STACKED" if this is the stacked ARF. "RESTFRAM" if this is single 
+		source rest-frame ARF. Defaults to "STACKED".
+
+	z : float, optional
+		Source redshift if this is single source rest-frame ARF.
 
 	Returns
 	-------
@@ -780,7 +913,7 @@ def write_arf(
 	hdu_specresp.header["TELESCOP"] = spec_type
 	hdu_specresp.header["INSTRUME"] = spec_type
 	if z is not None:
-		hdu_matrix.header["REDSHIFT"] = z
+		hdu_specresp.header["REDSHIFT"] = z
 	hdu_specresp.header["CHANTYPE"] = "PI"
 	hdu_specresp.header["DETCHANS"] = detchans
 	hdu_specresp.header["HDUCLASS"] = "OGIP"
@@ -831,7 +964,54 @@ def write_rmf(
 		spec_type="STACKED",z=None,
 ):
 	"""
+	Write RMF file according to OGIP standards.
+	Assume all spectral files (PI, ARF, RMF) under the same path for xspec convenience.
+
+	Parameters
+	----------
+	chan : numpy.ndarray
+		PI Channel. Must be the same length as `ene`.
+
+	ene_lo : numpy.ndarray
+		Lower edge of output channel energy (PI energy) bin.
 	
+	ene_hi : numpy.ndarray
+		Upper edge of output channel energy (PI energy) bin.
+
+	prob : numpy.ndarray
+		2D RMF matrix.
+
+	rmf_fname : str, optional
+		Output RMF name. Defaults to "stacked_rmf.fits".
+
+	expo : int or float, optional
+		Exposure in units of s. Defaults to 10.
+
+	rega : int or float, optional
+		Region area in units of deg^2. Defaults to 1.
+
+	rspwt_method : str, optional
+		Response weighting method. Defaults to "SHP".
+
+	srcid_lst : numpy.ndarray, optional
+		Source id list. Defaults to None.
+
+	rspwt_lst : numpy.ndarray, optional
+		Response weighting factor list. Defaults to None.
+
+	arf_fname : str, optional
+		Associated ARF name. Defaults to "stacked_arf.fits".
+
+	spec_type : str, optional
+		"STACKED" if this is the stacked ARF. "RESTFRAM" if this is single 
+		source rest-frame ARF. Defaults to "STACKED".
+
+	z : float, optional
+		Source redshift if this is single source rest-frame ARF.
+
+	Returns
+	-------
+	None
 	"""
 	hdu_lst = fits.HDUList()
 		
@@ -930,6 +1110,7 @@ def get_tlmin_from_header(rmf_fname):
 	rmf_fname : str
 		The RMF file name.
 
+		
 	Returns
 	-------
 	f_chan_0 : int
@@ -957,28 +1138,38 @@ def rebin_arf(arfene_lo,arfene_hi,specresp,ene_lo,ene_hi,coun,grpflg,prob=None):
 	----------
 	arfene_lo : numpy.ndarray
 		Lower edge of input model energy (ARF energy) bin.
+
 	arfene_hi : numpy.ndarray
 		Upper edge of input model energy (ARF energy) bin.
+
 	specresp : numpy.ndarray
 		Effective area defined within `arfene_lo` and `arfene_hi`.
+
 	ene_lo : numpy.ndarray
 		Lower edge of output channel energy bin.
+
 	ene_hi : numpy.ndarray
 		Upper edge of output channel energy bin.
+
 	coun : numpy.ndarray
 		Net photon counts in each channel energy bin.
+
 	grpflg : numpy.ndarray
 		Channel energy grouping flag, should be passed from `rebin_pi`.
+
 	prob : numpy.ndarray, optional
 		The RMF 2D probability matrix. If given, the ARF used for 
 		rebinning will be RMF-weighted. Defaults to None.
 
+		
 	Returns
 	-------
 	grpene_lo : numpy.ndarray
 		Lower edge of grouped output channel energy bin.
+
 	grpene_hi : numpy.ndarray
 		Upper edge of grouped output channel energy bin.
+
 	grpspecresp : numpy.ndarray
 		Grouped effective area as a function of grouped output channel 
 		energy.
@@ -1042,17 +1233,23 @@ def align_arf(ene_lo,ene_hi,arfene_lo,arfene_hi,specresp,prob=None):
 	----------
 	ene_lo : numpy.ndarray
 		Lower edge of output channel energy bin.
+
 	ene_hi : numpy.ndarray
 		Upper edge of output channel energy bin.
+
 	arfene_lo : numpy.ndarray
 		Lower edge of input model energy (ARF energy) bin.
+
 	arfene_hi : numpy.ndarray
 		Upper edge of input model energy (ARF energy) bin.
+
 	specresp : numpy.ndarray
 		The ARF specresp (cm^2 vs. arf energy).
+
 	prob : numpy.ndarray, optional
 		RMF 2D matrix (prob.shape=(len(`arfene_lo`),len(`ene_lo`))).
 
+		
 	Returns
 	-------
 	specresp_ali : numpy.ndarray
@@ -1106,20 +1303,26 @@ def concat_rmf(rmf_fname1,rmf_fname2,Es,Ee,Ngrid,out_fname):
 	----------
 	rmf_fname1 : str
 		Name of rmf with lower energy.
+
 	rmf_fname2 : str
 		Name of rmf with higher energy.
+
 	Es : float
 		Starting energy of the output rmf. Cannot be larger than minimum 
 		energy of `rmf_fname1`.
+
 	Ee : float
 		Ending energy of the output rmf. Cannot be smaller than maximum 
 		energy of `rmf_fname2`.
+
 	Ngrid : int
 		Number of grids between `Es` and `rmf_fname1` (also between 
 		`rmf_fname1` and `rmf_fname2`, between `rmf_fname2` and `Ee`).
+
 	out_fname : str
 		Output rmf name.
 
+		
 	Returns
 	-------
 	prob : numpy.ndarray
@@ -1290,20 +1493,26 @@ def concat_arf(arf_fname1,arf_fname2,Es,Ee,Ngrid,out_fname):
 	----------
 	arf_fname1 : str
 		Name of arf with lower energy.
+
 	arf_fname2 : str
 		Name of arf with higher energy.
+
 	Es : float
 		Starting energy of the output arf. Cannot be larger than minimum 
 		energy of `arf_fname1`.
+
 	Ee : float
 		Ending energy of the output arf. Cannot be smaller than maximum 
 		energy of `arf_fname2`.
+
 	Ngrid : int
 		Number of grids between `Es` and `arf_fname1` (also between 
 		`arf_fname1` and `arf_fname2`, between `arf_fname2` and `Ee`).
+
 	out_fname : str
 		Output ARF name.
 
+		
 	Returns
 	-------
 	specresp : numpy.ndarray

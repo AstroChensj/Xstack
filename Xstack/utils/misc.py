@@ -15,8 +15,10 @@ def get_nh(RA,DEC):
     Parameters
     ----------
     RA : float
+
     DEC : float
 
+    
     Returns
     -------
     nh_val : float
