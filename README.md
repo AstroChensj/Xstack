@@ -2,6 +2,8 @@
 
 :checkered_flag: **If you are in a hurry, please jump to [this link](#wrench-prerequisites-and-installation) for installation, and [this link](#ledger-how-to-use-xstack) for basic usage of this code. [Demo notebook](https://nbviewer.org/github/AstroChensj/Xstack/blob/main/demo/demo.ipynb) gives you a quick walk-through of <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span>.**
 
+For more information, please check our [documentation](https://xstack.readthedocs.io/en/latest/) (still in progress)!
+
 ## :pirate_flag: What is <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> ?
 
 <u><span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is a comprehensive standalone pipeline code for **X-ray spectral (rest-frame) shifting and stacking**.</u>
