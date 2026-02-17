@@ -29,6 +29,7 @@ autodoc_mock_imports = [
     "fitsio",
     "joblib",
     "matplotlib",
+    "mpl_toolkits",
     "numba",
     "numpy",
     "pandas",
