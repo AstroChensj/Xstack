@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-
+Helper functions for visualization.
 """
 import numpy as np
 from astropy.io import fits
@@ -35,11 +35,11 @@ def view_rmf(
         Name of the RMF file.
     n_grid_i : int, optional
         Number of grids for the input model energy (does not have to be 
-        the same as the length of `ENERG_LO` or `ENERG_HI`). Defaults to 
-        1000.
+        the same as the length of ``ENERG_LO`` or ``ENERG_HI``). Defaults to 
+        ``1000``.
     n_grid : int, optional
         Number of grids for the output photon energy (does not have to be 
-        the same as the length of `E_MIN` or `E_MAX`). Defaults to 1000.
+        the same as the length of ``E_MIN`` or ``E_MAX``). Defaults to ``1000``.
     fig : matplotlib.figure.Figure, optional
         The current figure.
     ax : matplotlib.axes.Axes, optional
@@ -47,22 +47,42 @@ def view_rmf(
     fig_name : str, optional
         Output figure name. If specified, will create an image.
     cmap : str, optional
-        cmap. Defaults to "gray_r".
+        cmap. Defaults to ``"gray_r"``.
     log_scale : bool, optional
         If True, use log-scale for cmap.
     v_min_lbound : float, optional
-        The lower bound of v_min for log-cmap. This means that 
-        `LogNorm(vmin=np.max(np.min(prob_new),v_min_lbound),
-        vmax=np.max(prob_new))`. Defaults to 1e-6.
+        The lower bound of ``v_min`` for log-cmap. This means that 
+        ``LogNorm(vmin=np.max(np.min(prob_new),v_min_lbound),
+        vmax=np.max(prob_new))``. Defaults to ``1e-6``.
     x_label : str, optional
-        X label. Defaults to "Output photon energy (keV)".
+        X label. Defaults to ``"Output photon energy (keV)"``.
     y_label : str, optional
-        Y label. Defaults to "Input model energy (keV)".
+        Y label. Defaults to ``"Input model energy (keV)"``.
 
     Returns
     -------
     ax : matplotlib.axes.Axes
         The current axes.
+    im : matplotlib.image.AxesImage
+        The image object for the RMF matrix.
+    cbar : matplotlib.colorbar.Colorbar
+        The colorbar object for the RMF matrix.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        from Xstack.visual.view import view_rmf
+        from matplotlib import pyplot as plt
+
+        fig, ax1 = plt.subplots(1,1,figsize=(4,4))
+        _, im, cbar = view_rmf("path/to/rmf.fits",fig=fig,ax=ax1,fig_name="rmf.png")
+        
+        #--- optionally modify the colorbar
+        im.set_clim(vmin=1e-5, vmax=1e-1)
+        cbar.update_normal(im)
+        cbar.set_label("Probability",size=14)
+
     """
     with fits.open(rmf_file) as hdu:
         mat = hdu["MATRIX"].data # `MATRIX` extension, determine the input model (=arf) energy bin (ENERG_LO,ENERG_HI)
@@ -82,8 +102,10 @@ def view_rmf(
     # The energy bin width may not be uniform
     # e.g. smaller energy bin width near 0.05 keV, but larger energy bin width near 16 keV
     # For better visualization, we do 2d-interpolation!
-    interp = RegularGridInterpolator((iene_ce, ene_ce), prob,
-                                     bounds_error=False, fill_value=None)
+    interp = RegularGridInterpolator(
+        (iene_ce, ene_ce), prob,
+        bounds_error=False, fill_value=None,
+    )
     
     iene_new = np.linspace(min(iene_lo),max(iene_hi),n_grid_i+1)
     iene_lo_new = iene_new[:-1]
@@ -98,7 +120,7 @@ def view_rmf(
     grid_new = np.meshgrid(ene_ce_new,iene_ce_new)
     prob_new = interp((grid_new[1],grid_new[0]))
     
-    # normalize each row
+    #--- normalize each row
     row_sum = np.sum(prob_new,axis=1)
     prob_new = prob_new / row_sum[:,np.newaxis]
     
@@ -134,7 +156,7 @@ def view_rmf(
     for spine in spines.values():
         spine.set_linewidth(2.5)
 
-    # inset colorbar
+    #--- inset colorbar
     # axins1 = inset_axes(ax,width="40%",height="4%",loc="lower right")
     axins1 = inset_axes(ax,width="100%",height="50%",bbox_to_anchor=(0.5,0.15,0.5,0.1),bbox_transform=ax.transAxes)
     if log_scale == True:
@@ -150,7 +172,7 @@ def view_rmf(
     if fig_name is not None: 
         plt.savefig(fig_name,bbox_inches="tight",transparent=False,dpi=300)
 
-    return ax
+    return ax, im, cbar
 
 
 
@@ -170,15 +192,15 @@ def make_dataarf_plot(
         Source spectrum file name.
     bkg_name : str, optional
         Background spectrum file name. If not specified, will look for 
-        it in the header of `src_name`.
+        it in the header of ``src_name``.
     arf_name : str, optional
         ARF file name. If not specified, will look for it in the header 
-        of `src_name`.
+        of ``src_name``.
     rmf_name : str, optional
         RMF file name. If not specified, will look for it in the header 
-        of `src_name`.
+        of ``src_name``.
     grp_name : str, optional
-        Grouping file name. Only uses its "GROUPING" column.
+        Grouping file name. Only uses its ``GROUPING`` column.
     normalize_at : int or float, optional
         Output spectrum normalized at some energy (keV). Defaults to None.
     outname : str, optional
@@ -197,12 +219,11 @@ def make_dataarf_plot(
     grpene_hi : numpy.ndarray
         Upper bounds of grouped energy.
     ratio : numpy.ndarray
-        Data/arf ratio, in units of [ct/cm^2/s/keV].
+        Data/arf ratio, in units of :math:`\mathrm{ct}\ \mathrm{cm}^{-2} \mathrm{s}^{-1}\ \mathrm{keV}^{-1}`.
     ratioerr : numpy.ndarray
         Uncertainty in data/arf ratio.
     ax : matplotlib.axes.Axes
         The axes for the plot. None if not specified.
-
     """
     with fits.open(src_name) as hdu:
         data = hdu["SPECTRUM"].data
@@ -468,16 +489,19 @@ def get_ene_dsp(ene_ce,prob_lst,fixed_mean=True):
     ene_ce : numpy.ndarray
         Output central channel energy.
     prob_lst : numpy.ndarray
-        Probability profile for some input model energy (this is a function of output channel energy). Must have same length as `ene_ce`.
+        Probability profile for some input model energy (this is a function 
+        of output channel energy). Must have same length as ``ene_ce``.
     fixed_mean : bool
-        If true, the mean energy of the Gaussian will be fixed at the nominal energy (which corresponds to maximal probability).
+        If true, the mean energy of the Gaussian will be fixed at the nominal 
+        energy (which corresponds to maximal probability).
 
     Returns
     -------
     norm : float
         The Gaussian normalization.
     ene_nom : float
-        The Gaussian central energy (this is the nominal energy for some input energy).
+        The Gaussian central energy (this is the nominal energy for some input 
+        energy).
     ene_dsp : float
         The Gaussian width (this is the energy dispersion for some input energy).
     """
@@ -505,9 +529,9 @@ def make_dspmap(mat,ebo,out_name,f_chan_0=None):
     Parameters
     ----------
     mat : astropy.io.fits.FITS_rec
-        The `MATRIX` HDU data from a standard RMF file.
+        The ``MATRIX`` HDU data from a standard RMF file.
     ebo : astropy.io.fits.FITS_rec
-        The `EBOUNDS` HDU data from a standard RMF file.
+        The ``EBOUNDS`` HDU data from a standard RMF file.
     out_name : str
         The output dispersion map name.
     f_chan_0 : int, optional
@@ -516,7 +540,7 @@ def make_dspmap(mat,ebo,out_name,f_chan_0=None):
 
     Returns
     -------
-    None.
+    None
     """
     iene_lo = mat["ENERG_LO"]
     iene_hi = mat["ENERG_HI"]

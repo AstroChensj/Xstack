@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+======================================================
+Module for model handling and folding through response
+======================================================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
+
 
 """
 import numpy as np
@@ -13,27 +21,22 @@ from Xstack.utils.rsp import get_prob,align_arf,get_tlmin_from_header
 #===================================================
 def align_model(oarfene_lo,oarfene_hi,omodel,narfene_lo,narfene_hi):
     """
-    Original model (defined on `oarfene` grid) --> New model (defined on 
-    `narfene` grid).
+    Original model (defined on ``oarfene`` grid) -> New model (defined on 
+    ``narfene`` grid).
 
     Parameters
     ----------
     oarfene_lo : numpy.ndarray
         Lower edge of original model energy bin.
-
     oarfene_hi : numpy.ndarray
         Upper edge of original model energy bin.
-
     omodel : numpy.ndarray
         Model flux defined on original model energy bin.
-
     narfene_lo : numpy.ndarray
         Lower edge of new model energy bin.
-
     narfene_hi : numpy.ndarray
         Upper edge of new model energy bin.
 
-        
     Returns
     -------
     nmodel : numpy.ndarray
@@ -69,11 +72,13 @@ def align_model(oarfene_lo,oarfene_hi,omodel,narfene_lo,narfene_hi):
 
 def fold_model(modelfile,rmffile,arffile,out_name):
     """
-    Fold the input models ([erg/cm^2/s/keV], input model energy) through 
-    response (ARF+RMF) files ([ct/s/keV], output channel energy).
+    Fold the input models 
+    (:math:`\mathrm{erg}\ \mathrm{cm}^{-2}\ \mathrm{s}^{-1}\ \mathrm{keV}^{-1}`, 
+    input model energy) through response (ARF+RMF) files 
+    (:math:`\mathrm{ct}\ \mathrm{s}^{-1}\ \mathrm{keV}^{-1}`, output channel energy).
     
     Different extensions store different models (models should be defined 
-    in `modelfile`). Different columns store `E_MIN`, `E_MAX`, and flux 
+    in ``modelfile``). Different columns store ``E_MIN``, ``E_MAX``, and flux 
     of different components in a model.
     
     Parameters
@@ -82,20 +87,15 @@ def fold_model(modelfile,rmffile,arffile,out_name):
         Name of file storing input models to be folded. Different 
         extensions store different models. Different columns store 
         different components. 
-
     rmffile : str
         Name of RMF file.
-
     arffile : str
         Name of ARF file.
-
     out_name : str
         Output fits name.
-
     usecpu : int
         Number of CPUs used in folding process.
         
-
     Returns
     -------
     None
@@ -114,7 +114,7 @@ def fold_model(modelfile,rmffile,arffile,out_name):
     f_chan_0 = get_tlmin_from_header(rmffile)
     prob = get_prob(mat,ebo,f_chan_0)
 
-    # in case you have any nan values
+    #--- in case you have any nan values
     prob[np.isclose(prob,0,rtol=1e-06, atol=1e-06, equal_nan=False)] = 0 # remove elements with probability below the 1e-6 threshold
     prob[np.isnan(prob)] = 0 # remove NaN
     prob[prob<0] = 0 # remove negative elements
@@ -171,7 +171,7 @@ def fold_model(modelfile,rmffile,arffile,out_name):
 
             hdu_lst.append(hdu_data)
 
-    # write fits file
+    #--- write fits file
     hdu_lst.writeto(f"{out_name}", overwrite=True)
 
     return

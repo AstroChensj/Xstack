@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+===================================
+Module for First energy file (FENE)
+===================================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
+
 
 """
 from astropy.io import fits
@@ -9,28 +17,23 @@ from Xstack.config import VERSION,LASTUPDATE,WEB
 
 def write_fene(srcid_lst,arffene_lst,fene_lst,fene_fname="./stacked_fene.fits"):
 	"""
-	Creating a fits storing the first energy of each source"s PI spectrum 
+	Creating a fits storing the first energy of each source's PI spectrum 
 	and ARF specresp.
 
 	Parameters
 	----------
 	srcid_lst : list or numpy.ndarray
 		The source ID list.
-
 	arffene_lst : list or numpy.ndarray
-		The first energy of each sources"s ARF specresp.
-
+		The first energy of each sources's ARF specresp.
 	fene_lst : list or numpy.ndarray
-		The first energy of each source"s PI spectrum.
-
+		The first energy of each source's PI spectrum.
 	fene_fname : str
 		The output fits name.
 
-		
 	Returns
 	-------
 	None
-
 	"""
 	hdu_lst = fits.HDUList()
 	

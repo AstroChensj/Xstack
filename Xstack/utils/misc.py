@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+==============================
+Miscellaneous tools for Xstack
+==============================
+:Authors:   Shi-Jiang Chen (MPE, USTC)
+            Johannes Buchner (MPE)
+            Teng Liu (USTC)
+:Email:     JohnnyCsj666@gmail.com
+
 
 """
 import os
@@ -8,21 +16,19 @@ import re
 
 def get_nh(RA,DEC):
     """
-    Get the Galactic NH from NASA"s HEASARC tool `NH` (https://heasarc.gsfc.nasa.gov/Tools/w3nh_help.html).
+    Get the Galactic NH from NASA's HEASARC tool ``NH`` (https://heasarc.gsfc.nasa.gov/Tools/w3nh_help.html).
     Please ensure the HEASOFT env has been set up.
-    NOTE: this is deprecated. Please use `gdpyc.GasMap` from Github instead.
+    NOTE: this is deprecated. Please use ``gdpyc.GasMap`` from Github instead.
     
     Parameters
     ----------
     RA : float
-
     DEC : float
-
     
     Returns
     -------
     nh_val : float
-        nh values in units of 1 cm^-2
+        nh values in units of 1 cm^{-2}
     """
     # write sh
     log_file = "nh.log"

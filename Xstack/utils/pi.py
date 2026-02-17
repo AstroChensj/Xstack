@@ -33,10 +33,8 @@ def read_pi(
     -------
     pi_chan : list
         PI channel.
-
     pi_coun : list
         Photon counts in each channel.
-
     z : float
         Redshift if exists.
     """
@@ -59,48 +57,37 @@ def shift_pi(
 ):
     """
     Shift a single PI to rest-frame.
-    
+
     Parameters
     ----------
     pi_fname : str
         Observed-frame pi file to be shifted, in standard OGIP format.
-        
     z : float
         Redshift.
-
     ene_lo : numpy.ndarray, optional
-		Lower edge of channel energy bin.
-
-	ene_hi : numpy.ndarray, optional
-		Upper edge of channel energy bin.
-
+        Lower edge of channel energy bin (keV).
+    ene_hi : numpy.ndarray, optional
+        Upper edge of channel energy bin (keV).
     ene_ce : numpy.ndarray, optional
-        (`ene_lo` + `ene_hi`) / 2
-
+        (``ene_lo`` + ``ene_hi``) / 2
     ene_wd : numpy.ndarray, optional
-        (`ene_hi` - `ene_lo`)
-
+        (``ene_hi`` - ``ene_lo``)
     rmf_fname : str, optional
         RMF file defining channel-energy conversion, in standard OGIP 
-        format. This is optional, unless `ene_lo` `ene_hi` are not
+        format. This is optional, unless ``ene_lo`` ``ene_hi`` are not
         specified.
-
     ene_trc : float, optional
-        Truncate energy [keV] below which manually set ARF and PI counts 
-        to zero. For eROSITA, `ene_trc` is typically 0.2 keV.
-    
-        
+        Truncate energy (keV) below which manually set ARF and PI counts 
+        to zero. For eROSITA, ``ene_trc`` is typically 0.2 keV.
+      
     Returns
     -------
     rest_chan : list
         Rest-frame channel.
-
     rest_coun : list
         Photon counts in each rest-frame channel.
-
     pi_chan : list
         Observed-frame channel.
-
     pi_coun : list
         Photon counts in each observed-frame channel.
     """
@@ -179,22 +166,19 @@ def calc_pi_error(pi_stk,):
     """
     Round PI counts to integer (so that Poisson applies), and calculate
     PI uncertainty using Poisson formula.
-    
+
     Parameters
     ----------
     pi_stk : numpy.ndarray
         Stacked PI array.
-
-        
+  
     Returns
     -------
     pi_stk : numpy.ndarray
         Stacked PI array. Rounded to nearest integer. 
-        E.g., 0.4 --> 0, 0.6 --> 1
-
+        E.g., 0.4 -> 0, 0.6 -> 1
     pierr_stk : numpy.ndarray
         Stacked PI error array.
-    
     """
     #--- For spectral counts
     # We round photon counts in each channel to nearest integer, to approximate Poisson
@@ -210,28 +194,23 @@ def calc_pi_error(pi_stk,):
 def calc_bkgpi_error(bkgpi_lst,bkgscal_lst,Nbkggrp=10):
     """
     Calculate stacked bkg PI counts and uncertainties.
-    
+
     Parameters
     ----------
     bkgpi_lst : numpy.ndarray or list
         List of bkg PI spectra.
-
     bkgscal_lst : numpy.ndarray or list
         List of bkg PI scaling factors.
-
     Nbkggrp : int, optional
-       Number of background groups with similar `bkgscal` to be created. 
-       Defaults to 10.
+       Number of background groups with similar ``bkgscal`` to be created. 
+       Defaults to ``10``.
 
-       
     Returns
     -------
     pi_stk : numpy.ndarray
         Stacked PI array.
-
     pierr_stk : numpy.ndarray
         Stacked PI error array.
-    
     """
     bkgpi_lst = np.array(bkgpi_lst)
     bkgscal_lst = np.array(bkgscal_lst)
@@ -264,23 +243,21 @@ def get_bkgscal(src_fname,bkg_fname=None):
     Get background-to-source scaling ratio, which is calculated as:
 
     .. math::
-        :label: eq:bkgscal
-
-        `scaling factor` = `AREASCAL`_src / `AREASCAL`_src * 
-        `BACKSCAL`_src / `BACKSCAL`_bkg * `EXPOSURE`_src 
-        / `EXPOSURE`_bkg
+       :label: eq:bkgscal
+  
+       \mathrm{Scaling\ Factor}
+       = \\frac{\mathrm{AREASCAL}_{\mathrm{src}}}{\mathrm{AREASCAL}_{\mathrm{bkg}}}
+       \\times \\frac{\mathrm{BACKSCAL}_{\mathrm{src}}}{\mathrm{BACKSCAL}_{\mathrm{bkg}}}
+       \\times \\frac{\mathrm{EXPOSURE}_{\mathrm{src}}}{\mathrm{EXPOSURE}_{\mathrm{bkg}}}
     
-        
     Parameters
     ----------
     src_fname : str
         Source PI spectrum name.
-
     bkg_fname : str, optional
         Background PI spectrum name. If not specified, will look for it 
-        from the header of `src_fname`.
+        from the header of ``src_fname``.
     
-        
     Returns
     -------
     bkgscal : float
@@ -291,25 +268,25 @@ def get_bkgscal(src_fname,bkg_fname=None):
     Equation :eq:`bkgscal` applies to both point sources and extended 
     sources.
 
-    For eROSITA, `EXPOSURE` is the total exposure time during which at 
+    For eROSITA, ``EXPOSURE`` is the total exposure time during which at 
     least one pixel of the extraction aperture is in the FoV. Since the
-    FoV is scanning over the region during the exposure, `EXPOSURE` is 
+    FoV is scanning over the region during the exposure, ``EXPOSURE`` is 
     not the real averaged exposure time per pixel in the region. The 
     real averaged exposure time per pixel, after correcting for such 
     "region-covering incompleteness" issue, is actually:
 
     .. math::
 
-        T_\mathrm{ave} \equiv `BACKSCL`/`REGAREA` * `EXPOSURE`
+        T_\mathrm{ave} \equiv \\frac{\mathrm{BACKSCL}}{\mathrm{REGAREA}} \\times \mathrm{EXPOSURE}
 
-    where `REGAREA`/`BACKSCAL` is the region-covering-incompleteness-
+    where ``REGAREA``/``BACKSCAL`` is the region-covering-incompleteness-
     correcting factor.
 
     Note that this is different from Eq. 10 of X. Zhang+2024: the bkg 
-    spectra should not only be scaled by `REGAREA`, but additionally by 
+    spectra should not only be scaled by ``REGAREA``, but additionally by 
     the averaged exposure per pixel, which effectively results in an 
-    exactly same scaling formula as for the point sources (`BACKSCAL` 
-    * `EXPOSURE` * `AREASCAL`).
+    exactly same scaling formula as for the point sources (``BACKSCAL`` 
+    * ``EXPOSURE`` * ``AREASCAL``).
     """
     with fits.open(src_fname) as hdu:
         head = hdu["SPECTRUM"].header
@@ -339,7 +316,6 @@ def get_expo(src_fname):
     src_fname : str
         Source PI spectrum name.
 
-
     Returns
     -------
     src_expo : float
@@ -353,7 +329,7 @@ def get_expo(src_fname):
 
 def get_rega(src_fname):
     """
-    Get source geometric area, from the non-standard keyword `REGAREA`.
+    Get source geometric area, from the non-standard keyword ``REGAREA``.
     For non-eROSITA instrument, return 1.
 
     Parameters
@@ -361,11 +337,10 @@ def get_rega(src_fname):
     src_fname : str
         Source PI spectrum name.
 
-    
     Returns
     -------
     src_rega : float
-        Source region area [deg^2].
+        Source region area (:math:`\mathrm{deg}^2`).
     """
     try:
         src_rega = fits.getval(src_fname,keyword="REGAREA",extname="SPECTRUM")
@@ -376,32 +351,29 @@ def get_rega(src_fname):
 
 def make_bkggrpflg(bkgscal_lst,Nbkggrp=10):
     """
-    Group the background spectra into `Ngrp` groups, according to the 
+    Group the background spectra into ``Ngrp`` groups, according to the 
     bkg-to-source scaling ratios. 
 
-    Return an array `bkggrpflg_lst` that tells you which group each 
+    Return an array ``bkggrpflg_lst`` that tells you which group each 
     background PI spectrum should be assigned to.
-    
+
     Parameters
     ----------
     bkgscal_lst : list or numpy.ndarray
         List of bkg-to-source scaling ratio (considering both 
-        `BACKSCAL` and `EXPOSURE`) for each background PI spectrum.
-
+        ``BACKSCAL`` and ``EXPOSURE``) for each background PI spectrum.
     Nbkggrp : int, optional
-        Number of background groups with similar `bkgscal` to be created. 
-        Defaults to 10.
+        Number of background groups with similar ``bkgscal`` to be created. 
+        Defaults to ``10``.
 
-    
     Returns
     -------
     bkggrpflg_lst : numpy.ndarray
         An array that indicates which group each background PI spectrum 
-        should be assigned to (length = len(`bkgscal_lst`)).
-
+        should be assigned to (length = len(``bkgscal_lst``)).
     bkgscal_ave_lst : numpy.ndrray
         The average bkg-to-source scaling ratio of each group 
-        (length = `Ngrp`).
+        (length = ``Ngrp``).
     """
     #--- array-lize
     bkgscal_lst = np.asarray(bkgscal_lst,dtype=float)
@@ -435,41 +407,33 @@ def write_pi(
 ):
     """
     Write PI spectrum file according to OGIP standards.
-    Assume all spectral files (PI, ARF, RMF) under the same path for xspec convenience.
+    Assume all spectral files (PI, ARF, RMF) under the same path for ``XSPEC`` convenience.
 
     Parameters
     ----------
     chan : numpy.ndarray
         Stacked src spectrum channel.
-
     pi : numpy.ndarray
         Stacked src spectrum counts.
-
     pierr : numpy.ndarray, optional
-        Stacked src spectrum uncertainty. Defaults to None (use XSPEC POISSERR by default).
-
+        Stacked src spectrum uncertainty. Defaults to ``None`` (use ``XSPEC`` 
+        ``POISSERR`` by default).
     pi_fname : str, optional
-        Output src spectrum name. Defaults to "stacked_srcpi.fits".
-
+        Output src spectrum name. Defaults to ``stacked_srcpi.fits``.
     expo : int or float, optional
-        Stacked exposure. Defaults to 10.
-
+        Stacked exposure. Defaults to ``10``.
     rega : int or float, optional
-        Stacked region area. Defaults to 1.
-
+        Stacked region area. Defaults to ``1``.
     bkgpi_fname : str, optional
-        Stacked bkg PI filename. Defaults to None.
-
+        Stacked bkg PI filename. Defaults to ``None``.
     rmf_fname : str, optional
-        Stacked RMF filename. Defaults to None.
-
+        Stacked RMF filename. Defaults to ``None``.
     arf_fname : str, optional
-        Stacked ARF filename. Defaults to None.
-
+        Stacked ARF filename. Defaults to ``None``.
     spec_type : str, optional
-        "STACKED" for stacked spectrum, or "RESTFRAM" for individual rest-frame spectrum.
-        Counts are stored as integer in "STACKED" mode, while float in "RESTFRAM" mode. 
-
+        ``STACKED`` for stacked spectrum, or ``RESTFRAM`` for individual 
+        rest-frame spectrum. Counts are stored as integer in ``STACKED`` 
+        mode, while float in ``RESTFRAM`` mode. 
     z : float, optional
         Redshift.
 
@@ -538,35 +502,28 @@ def write_bkgpi(
 ):
     """
     Write bkg PI spectrum file according to OGIP standards.
-    Assume all spectral files (PI, ARF, RMF) under the same path for xspec convenience.
+    Assume all spectral files (PI, ARF, RMF) under the same path for 
+    ``XSPEC`` convenience.
 
     Parameters
     ----------
     chan : numpy.ndarray
         Stacked bkg spectrum channel.
-
     bkgpi : numpy.ndarray
         Stacked bkg spectrum counts.
-
     bkgpierr : numpy.ndarray
         Stacked bkg spectrum uncertainty.
-
     bkgpi_fname : str, optional
-        Output bkg spectrum name. Defaults to "stacked_bkgpi.fits".
-
+        Output bkg spectrum name. Defaults to ``stacked_bkgpi.fits``.
     expo : int or float, optional
-        Stacked exposure. Defaults to 10.
-
+        Stacked exposure. Defaults to ``10``.
     rega : int or float, optional
-        Stacked region area. Defaults to 1.
-
+        Stacked region area. Defaults to ``1``.
     spec_type : str, optional
-        "STACKED" for stacked spectrum, or "RESTFRAM" for individual rest-frame spectrum.
+        ``STACKED`` for stacked spectrum, or ``RESTFRAM`` for individual rest-frame spectrum.
         Counts are stored as float regardless.
-
     z : float, optional
         Redshift.
-
 
     Returns
     -------
@@ -620,52 +577,40 @@ def write_bkgpi(
 #--- below for visualization purposes
 def make_grpflg(src_fname,grp_fname=None,method="EDGE",rmf_fname="",eelo=None,eehi=None,bkg_fname=None,min_net=0):
     """
-    Add `GROUPING` column to the source PI file.
+    Add ``GROUPING`` column to the source PI file.
     
     Parameters
     ----------
     src_fname : str
         Input source PI file name.
-
     grp_fname : str, optional
         Output grouped PI file name. If not specified, will not create 
         output file.
-
     method : str, optional
         Grouping method. Available methods:
-        - `EDGE`: Group by fixed energy bin edges. Edges provided by 
-          `eelo` and `eehi`.
-        - `MIN_NET`: Group by minimum net counts (src-bkg*bkgscal). 
-           Needs to specify the bkg_fname and min_net in each group.
+
+        - ``EDGE``: Group by fixed energy bin edges. Edges provided by 
+          ``eelo`` and ``eehi``.
+        - ``MIN_NET``: Group by minimum net counts ``(src-bkg*bkgscal)``. 
+           Needs to specify the ``bkg_fname`` and ``min_net`` in each group.
 
     rmf_fname : str, optional
-        (for `EDGE` method) RMF file name. If not specified, the code 
-        will automatically search the header of `src_fname`.
-
+        (for ``EDGE`` method) RMF file name. If not specified, the code 
+        will automatically search the header of ``src_fname``.
     eelo : numpy.ndarray, optional
-        (for `EDGE` method) Lower edge of fixed energy bin.
-
+        (for ``EDGE`` method) Lower edge of fixed energy bin.
     eehi : numpy.ndarray, optional
-        (for `EDGE` method) Upper edge of fixed energy bin.
-
+        (for ``EDGE`` method) Upper edge of fixed energy bin.
     bkg_fname : str, optional
-        Background file name used in `MIN_NET` mode. Defaults to None. 
-        If not specified, will look for it in the header of `src_fname`.
-
+        Background file name used in ``MIN_NET`` mode. Defaults to ``None``. 
+        If not specified, will look for it in the header of ``src_fname``.
     min_net : float or int, optional
-        Minimum net counts in each group in `MIN_NET` mode. Defaults to 0.
+        Minimum net counts in each group in ``MIN_NET`` mode. Defaults to ``0``.
     
-        
     Returns
     -------
     grpflg : numpy.ndarray
-        `GROUPING` column written in `grp_fname`.
-
-        
-    Available Methods
-    -----------------
-    * `EDGE`: Group by fixed energy bin edges.
-    * `MIN_NET`: Group by minimum net counts in each group.
+        ``GROUPING`` column written in ``grp_fname``.
     """
     if method == "EDGE":
         if (eelo is None) or (eehi is None):
@@ -770,37 +715,29 @@ def make_grpflg(src_fname,grp_fname=None,method="EDGE",rmf_fname="",eelo=None,ee
 
 def rebin_pi(ene_lo,ene_hi,coun,coun_err,grpflg):
     """
-    Rebin PI file according to `grpflg`.
-    
+    Rebin PI file according to ``grpflg``.
+
     Parameters
     ----------
     ene_lo : numpy.ndarray
         Lower edge of channel energy bin.
-
     ene_hi : numpy.ndarray
         Upper edge of channel energy bin.
-
     coun : numpy.ndarray
         Photon counts in each channel.
-
     coun_err : numpy.ndarray
         Photon counts error in each channel.
-
     grpflg : numpy.ndarray
-        Grouping flag. Must have same length as `ene_lo` or `ene_hi`.
+        Grouping flag. Must have same length as ``ene_lo`` or ``ene_hi``.
 
-    
     Returns
     -------
     grpene_lo : numpy.ndarray
         Lower edge of grouped energy bin.
-
     grpene_hi : numpy.ndarray
         Upper edge of grouped energy bin.
-
     grpcoun : numpy.ndarray
         Photon counts in each grouped energy bin.
-        
     grpcoun_err : numpy.ndarray
         Photon counts error in each grouped energy bin.
     """

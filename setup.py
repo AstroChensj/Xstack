@@ -12,6 +12,7 @@ setup(
     packages=["Xstack","Xstack/utils","Xstack/visual","Xstack/simu","Xstack_scripts"],
     install_requires=[
         "astropy",
+        "fitsio",
         "numpy",
         "scipy",
         "pandas",

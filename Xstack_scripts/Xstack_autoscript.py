@@ -18,6 +18,7 @@ frame) PI spectra, without any scaling; and then sum the response files
 preserve the overall spectral shape. 
 
 The key features of Xstack are: 
+
 1) properly account account for individual spectral contribution to the 
    final stack, by assigning data-driven weighting factors for the 
    responses; 
@@ -30,42 +31,43 @@ Examples
 Calling Xstack is simple. For this command line version, it is only a 
 single-line task:
 
-.. code-block::
+.. code-block:: bash
 
-	runXstack your_filelist.txt --prefix ./results/stacked_
+   runXstack your_filelist.txt --prefix ./results/stacked_
 
 
 And you will get: 
-- stacked PI spectrum `./results/stacked_pi.fits`
-- stacked background PI spectrum `./results/stacked_bkgpi.fits`
-- stacked response files
-	+ `./results/stacked_arf.fits`
-	+ `./results/stacked_rmf.fits`
-- and `./results/stacked_fene.fits`, which stores the first contributing 
+
+- stacked PI spectrum ``./results/stacked_pi.fits``
+- stacked background PI spectrum ``./results/stacked_bkgpi.fits``
+- stacked response files:
+
+  - ``./results/stacked_arf.fits``
+  - ``./results/stacked_rmf.fits``
+
+- and ``./results/stacked_fene.fits``, which stores the first contributing 
   energy of each individual source. 
 
 Or more sophisticatedly:
 
-.. code-block::
+.. code-block:: bash
 
-	runXstack your_filelist.txt --prefix ./results/stacked_ \
-	--rsp_weight_method SHP --rsp_proj_gamma 2.0 \
-	--flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
-	--ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf
+   runXstack your_filelist.txt --prefix ./results/stacked_ \
+     --rsp_weight_method SHP --rsp_project_gamma 2.0 \
+     --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
+     --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf
 
 
 If you want to do bootstrap, that is also easy:
 
-.. code-block::
+.. code-block:: bash
 
-	runXstack your_filelist.txt --prefix ./results/stacked_ \
-	--rsp_weight_method SHP --rsp_project_gamma 2.0 \
-	--flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
-	--ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf \
-	--resample_method bootstrap --num_bootstrap 100
+   runXstack your_filelist.txt --prefix ./results/stacked_ \
+     --rsp_weight_method SHP --rsp_project_gamma 2.0 \
+     --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 \
+     --ene_trc 0.2 --same_rmf AllSourcesUseSameRMF.rmf \
+     --resample_method bootstrap --num_bootstrap 100
 
-
-Please see below for the documentation of each argument:
 
 """
 # Xstack main module
@@ -90,34 +92,65 @@ class HelpfulParser(argparse.ArgumentParser):
 		self.print_help()
 		sys.exit(2)
 
-parser = HelpfulParser(description=__doc__,
-	epilog="""Shi-Jiang Chen, Johannes Buchner and Teng Liu (C) 2025 <JohnnyCsj666@gmail.com>""",
-	formatter_class=argparse.RawDescriptionHelpFormatter)
+def build_parser():
+	parser = HelpfulParser(description=__doc__,
+		epilog="""Shi-Jiang Chen, Johannes Buchner and Teng Liu (C) 2025 <JohnnyCsj666@gmail.com>""",
+		formatter_class=argparse.RawDescriptionHelpFormatter)
 
-
-parser.add_argument("filelist", type=str, help="text file containing the file names")
-parser.add_argument("--prefix", type=str, default="./results/stacked_", help="prefix for output stacked PI, BKGPI, ARF, and RMF files; defaults to './results/stacked_'")
-parser.add_argument("--rsp_weight_method", type=str, default="SHP", help="method to calculate RSP weighting factor for each source; 'SHP': assuming all sources have same spectral shape (only this mode would require flux_energy_lo and flux_energy_hi), 'FLX': assuming all sources have same shape and energy flux (weigh by exposure time), 'LMN': assuming all sources have same shape and luminosity (weigh by exposure/dist^2); defaults to 'SHP'")
-parser.add_argument("--rsp_project_gamma", type=float, default=2.0, help="prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response; defaults to 2.0 (typical for AGN).")
-parser.add_argument("--flux_energy_lo", type=float, default=1.0, help="lower end of the energy range in keV for computing flux, used only when `rsp_weight_method`=`SHP`; defaults to 1.0")
-parser.add_argument("--flux_energy_hi", type=float, default=2.3, help="upper end of the energy range in keV for computing flux; used only when `rsp_weight_method`=`SHP`; defaults to 2.3")
-parser.add_argument("--nthreads", type=int, default=10, help="number of cpus used for RMF shifting")
-parser.add_argument("--num_bkg_groups", type=int, default=10, help="number of background groups")
-parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
-parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
-parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
-parser.add_argument("--do_cache", action="store_true", help="save and load individual rest-frame files")
-# below are for bootstrap
-parser.add_argument("--bootstrap", action="store_true", help="activate bootstrap mode")
-parser.add_argument("--num_bootstrap", type=int, default=10, help="number of bootstrap experiments")
-parser.add_argument("--bootstrap_portion", type=float, default=1.0, help="portion of sources to resample in each bootstrap experiment")
-
-args = parser.parse_args()
+	parser.add_argument("filelist", type=str, help="text file containing the file names")
+	parser.add_argument("--prefix", type=str, default="./results/stacked_", help="prefix for output stacked PI, BKGPI, ARF, and RMF files; defaults to ``'./results/stacked_'``")
+	parser.add_argument("--rsp_weight_method", type=str, default="SHP", help="method to calculate RSP weighting factor for each source; ``SHP``: assuming all sources have same spectral shape (only this mode would require flux_energy_lo and flux_energy_hi), ``FLX``: assuming all sources have same shape and energy flux (weigh by exposure time), ``LMN``: assuming all sources have same shape and luminosity (weigh by exposure/dist^2); defaults to ``SHP``")
+	parser.add_argument("--rsp_project_gamma", type=float, default=2.0, help="prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the ``SHP`` method, to calculate the weight of each response; defaults to 2.0 (typical for AGN).")
+	parser.add_argument("--flux_energy_lo", type=float, default=1.0, help="lower end of the energy range in keV for computing flux, used only when ``rsp_weight_method=SHP``; defaults to ``1.0``")
+	parser.add_argument("--flux_energy_hi", type=float, default=2.3, help="upper end of the energy range in keV for computing flux; used only when ``rsp_weight_method=SHP``; defaults to ``2.3``")
+	parser.add_argument("--nthreads", type=int, default=10, help="number of cpus used for RMF shifting")
+	parser.add_argument("--num_bkg_groups", type=int, default=10, help="number of background groups")
+	parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
+	parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
+	parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
+	parser.add_argument("--do_cache", action="store_true", help="save and load individual rest-frame files")
+	# below are for bootstrap
+	parser.add_argument("--bootstrap", action="store_true", help="activate bootstrap mode")
+	parser.add_argument("--num_bootstrap", type=int, default=10, help="number of bootstrap experiments")
+	parser.add_argument("--bootstrap_portion", type=float, default=1.0, help="portion of sources to resample in each bootstrap experiment")
+	return parser
 
 
 def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 	"""
+	Read one entry from `filelist` (path to PI spectrum), return path to 
+	PI spectrum, ARF, RMF, and values of redshift and Galactic absorption.
+
 	
+	Parameters
+	----------
+	filename : str
+		The file name of the PI spectrum (FITS file).
+	same_rmf : str or None
+		If not None, it specifies the common RMF file to be used for all 
+		sources. If None, the RMF file will be read from the header of each 
+		PI spectrum.
+	check_bkg_arf : bool
+		If True, the ARF of the background spectrum (if exists) will be 
+		checked. If the background ARF is different from the source ARF, 
+		a warning will be issued. This is to ensure that the background 
+		spectrum is properly matched to the source spectrum.
+
+	
+	Returns
+	-------
+	filename : str
+		The file name of the PI spectrum (FITS file).
+	backfile : str or None
+		The file name of the background PI spectrum (FITS file), or None if 
+		not exists.
+	arffile : str
+		The file name of the ARF (FITS file), or empty string if not exists.
+	rmffile : str
+		The file name of the RMF (FITS file), or empty string if not exists.
+	z : float
+		The redshift of the source, read from `filename.z` if exists, or 0.0 
+		if not exists.
 	"""
 	filename = filename.strip()
 	if not filename:
@@ -153,7 +186,7 @@ def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 					bhdr = bb["SPECTRUM"].read_header()
 				if bhdr.get("ANCRFILE","none") not in ("none",hdr.get("ANCRFILE","")):
 					warnings.warn(
-						f"Background must have same ARF; but got {bhdr.get("ANCRFILE")} instead of {hdr.get("ANCRFILE")}"
+						f"Background must have same ARF; but got {bhdr.get('ANCRFILE')} instead of {hdr.get('ANCRFILE')}"
 					)
 			except Exception as err:
 				warnings.warn(f"Cannot read background {backfile}: {err}")
@@ -169,7 +202,13 @@ def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 	return filename,backfile,arffile,rmffile,z,nh
 
 
-def main():
+def main(argv=None):
+	"""
+	Main function to run Xstack. It reads the input file list, extracts the
+	PI spectrum, ARF, RMF, redshift, and Galactic absorption for each source,
+	and then runs the XstackRunner to perform the stacking.
+	"""
+	args = build_parser().parse_args(argv)
 	#--- parse input files
 	with open(args.filelist,"r") as f:
 		lines = f.readlines()
@@ -233,4 +272,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
