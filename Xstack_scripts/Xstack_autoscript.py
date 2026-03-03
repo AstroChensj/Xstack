@@ -264,6 +264,7 @@ def main(argv=None):
 		num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
 		bootstrap_portion=args.bootstrap_portion,       # portion to resample in `bootstrap` method
 		prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+		run_cmd=" ".join(sys.argv),                     # command provenance in FITS HISTORY
 		same_target=True if args.same_target else False,# stack multiple exposures of same target?
 		do_cache=True if args.do_cache else False,		# save and load individual rest-frame files
 	).run()

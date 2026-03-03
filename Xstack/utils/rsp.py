@@ -16,7 +16,7 @@ from numba import jit
 from astropy.cosmology import Planck18
 import astropy.units as u
 import os
-from Xstack.utils.logger import utc_now_iso
+from Xstack.utils.logger import utc_now_iso,add_run_cmd_history
 from Xstack.config import VERSION,LASTUPDATE,WEB
 
 
@@ -809,7 +809,7 @@ def write_arf(
 		arfene_lo,arfene_hi,specresp,arf_fname="stacked_arf.fits",
 		detchans=1000,expo=10,rega=1,rspwt_method="SHP",rspnorm=1,
 		srcid_lst=None,rspwt_lst=None,pi_totcts_lst=None,bkgpi_totcts_lst=None,flg=None,
-		spec_type="STACKED",z=None,
+		spec_type="STACKED",z=None,run_cmd=None,
 ):
 	"""
 	Write ARF file according to OGIP standards.
@@ -855,6 +855,8 @@ def write_arf(
 		source rest-frame ARF. Defaults to ``STACKED``.
 	z : float, optional
 		Source redshift if this is single source rest-frame ARF.
+	run_cmd : str, optional
+		Full command string recorded in ``HISTORY`` for provenance.
 
 	Returns
 	-------
@@ -890,6 +892,7 @@ def write_arf(
 	hdu_specresp.header["WTMETH"] = (rspwt_method, "response weighting method [SHP/FLX/LMN]")
 	hdu_specresp.header["CREATOR"] = "XSTACK"
 	hdu_specresp.header["HISTORY"] = f"{utc_now_iso()}: stacked source ARF created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
+	add_run_cmd_history(hdu_specresp.header,run_cmd)
 	hdu_lst.append(hdu_specresp)
 
 	#--- extension 2: WEIGHT
@@ -926,7 +929,7 @@ def write_rmf(
 		chan,ene_lo,ene_hi,iene_lo,iene_hi,prob,rmf_fname="./stacked_rmf.fits",
 		expo=10,rega=1,rspwt_method="SHP",
 		srcid_lst=None,rspwt_lst=None,arf_fname="./stacked_arf.fits",
-		spec_type="STACKED",z=None,
+		spec_type="STACKED",z=None,run_cmd=None,
 ):
 	"""
 	Write RMF file according to OGIP standards.
@@ -961,6 +964,8 @@ def write_rmf(
 		source rest-frame ARF. Defaults to ``STACKED``.
 	z : float, optional
 		Source redshift if this is single source rest-frame ARF.
+	run_cmd : str, optional
+		Full command string recorded in ``HISTORY`` for provenance.
 		
 	Returns
 	-------
@@ -1017,6 +1022,7 @@ def write_rmf(
 		hdu_matrix.header["ANCRFILE"] = (os.path.basename(arf_fname), "associated ancillary response file")
 	hdu_matrix.header["CREATOR"] = "XSTACK"
 	hdu_matrix.header["HISTORY"] = f"{utc_now_iso()}: stacked source RMF created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
+	add_run_cmd_history(hdu_matrix.header,run_cmd)
 	hdu_lst.append(hdu_matrix)
 	
 	#--- extension 2: EBOUNDS

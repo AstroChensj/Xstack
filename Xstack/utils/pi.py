@@ -14,7 +14,7 @@ import numpy as np
 from astropy.io import fits
 import os
 import shutil
-from Xstack.utils.logger import utc_now_iso
+from Xstack.utils.logger import utc_now_iso,add_run_cmd_history
 from Xstack.config import VERSION,LASTUPDATE,WEB
 
 
@@ -430,7 +430,7 @@ def write_pi(
         chan,pi,pierr=None,pi_fname="stacked_pi.fits",
         expo=10,rega=1,bkgpi_fname=None,rmf_fname=None,arf_fname=None,
         spec_type="STACKED",z=None,
-        areascal=1.0,backscal=1.0,corrscal=1.0,
+        areascal=1.0,backscal=1.0,corrscal=1.0,run_cmd=None,
 ):
     """
     Write PI spectrum file according to OGIP standards.
@@ -469,6 +469,8 @@ def write_pi(
         Header keyword ``BACKSCAL``. Defaults to ``1.0``.
     corrscal : float, optional
         Header keyword ``CORRSCAL``. Defaults to ``1.0``.
+    run_cmd : str, optional
+        Full command string recorded in ``HISTORY`` for provenance.
 
     Returns
     -------
@@ -522,6 +524,7 @@ def write_pi(
     hdu_spectrum.header["HDUCLAS2"] = "TOTAL"
     hdu_spectrum.header["HDUCLAS3"] = "COUNT"
     hdu_spectrum.header["HISTORY"] = f"{utc_now_iso()}: stacked source PI spectrum created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
+    add_run_cmd_history(hdu_spectrum.header,run_cmd)
     
     hdu_lst.writeto(f"{pi_fname}",overwrite=True)
 
@@ -532,7 +535,7 @@ def write_bkgpi(
         chan,bkgpi,bkgpierr,bkgpi_fname="stacked_bkgpi.fits",
         expo=10,rega=1,
         spec_type="STACKED",z=None,
-        areascal=1.0,backscal=1.0,corrscal=1.0,
+        areascal=1.0,backscal=1.0,corrscal=1.0,run_cmd=None,
 ):
     """
     Write bkg PI spectrum file according to OGIP standards.
@@ -564,6 +567,8 @@ def write_bkgpi(
         Header keyword ``BACKSCAL``. Defaults to ``1.0``.
     corrscal : float, optional
         Header keyword ``CORRSCAL``. Defaults to ``1.0``.
+    run_cmd : str, optional
+        Full command string recorded in ``HISTORY`` for provenance.
 
     Returns
     -------
@@ -608,6 +613,7 @@ def write_bkgpi(
     hdu_spectrum.header["HDUCLAS2"] = "BKG"
     hdu_spectrum.header["HDUCLAS3"] = "COUNT"
     hdu_spectrum.header["HISTORY"] = f"{utc_now_iso()}: stacked background PI spectrum created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
+    add_run_cmd_history(hdu_spectrum.header,run_cmd)
 
     hdu_lst.writeto(f"{bkgpi_fname}",overwrite=True)
 

@@ -55,3 +55,17 @@ def get_ram_gb():
 	"""
 	process = psutil.Process(os.getpid())
 	return process.memory_info().rss / 1024**3  # GB
+
+
+def add_run_cmd_history(header,run_cmd):
+    """
+    Add command provenance to FITS ``HISTORY`` cards.
+    """
+    if run_cmd is None:
+        return
+    txt = f"CMD: {run_cmd}".strip()
+    if txt == "CMD:":
+        return
+    width = 70
+    for i in range(0,len(txt),width):
+        header.add_history(txt[i:i+width])

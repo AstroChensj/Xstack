@@ -125,6 +125,9 @@ class XstackRunner:
         will be saved under the same path as ``pifile``. This will save a lot 
         of running time, at the cost of additional disk space (and burden on
         I/O). Defaults to ``False``.
+    run_cmd : str, optional
+        Command string recorded into FITS ``HISTORY`` cards for provenance.
+        Defaults to ``None``.
     same_target : bool, optional
         Stack multiple exposures of the same target in observed frame.
         In this mode, rest-frame shifting, Galactic NH correction, and
@@ -156,6 +159,7 @@ class XstackRunner:
             Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,
             bootstrap=False,num_bootstrap=10,bootstrap_portion=1.0,
             prefix="./results/stacked_",
+            run_cmd=None,
             same_target=False,
             do_cache=False,
         ):
@@ -204,6 +208,7 @@ class XstackRunner:
         self.extended = extended
         self.nthreads = nthreads
         self.Nsrc = len(pifile_lst)
+        self.run_cmd = run_cmd
         self.same_target = same_target
         self.do_cache = do_cache
 
@@ -476,24 +481,28 @@ class XstackRunner:
             write_pi(
                 chan=self.CHANNEL,pi=self.pi_stk_rlz[k],pierr=self.pierr_stk_rlz[k],pi_fname=self.o_pi_fname_rlz[k],
                 expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],rmf_fname=self.o_rmf_fname_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_bkgpi(
                 chan=self.CHANNEL,bkgpi=self.bkgpi_stk_rlz[k],bkgpierr=self.bkgpierr_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],
                 expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_arf(
                 arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,specresp=self.specresp_stk_rlz[k],arf_fname=self.o_arf_fname_rlz[k],
                 detchans=len(self.CHANNEL),expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method=self.rspwt_method,rspnorm=self.rspnorm_rlz[k],
                 srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],pi_totcts_lst=self.pi_totcts_lst_rlz[k],bkgpi_totcts_lst=self.bkgpi_totcts_lst_rlz[k],flg=self.int_flg,spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_rmf(
                 chan=self.CHANNEL,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,iene_lo=self.IENE_LO,iene_hi=self.IENE_HI,prob=self.prob_stk_rlz[k],
                 rmf_fname=self.o_rmf_fname_rlz[k],expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method=self.rspwt_method,
                 srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_fene(
                 srcid_lst=self.srcid_lst_rlz[k],arffene_lst=self.arffene_lst_rlz[k],fene_lst=self.fene_lst_rlz[k],
-                fene_fname=self.o_fene_fname_rlz[k],
+                fene_fname=self.o_fene_fname_rlz[k],run_cmd=self.run_cmd,
             )
             
         #--- generate summary log
@@ -736,7 +745,7 @@ class XstackRunner:
 
         chan,pi_sft,_,_ = shift_pi(pi_fname=infile,z=z,**shift_pi_kwargs)
         if do_cache:
-            write_pi(chan=chan,pi=pi_sft,pierr=None,pi_fname=outfile,z=z,**write_pi_kwargs)
+            write_pi(chan=chan,pi=pi_sft,pierr=None,pi_fname=outfile,z=z,run_cmd=self.run_cmd,**write_pi_kwargs)
 
         return chan,pi_sft,None,False
 
@@ -785,7 +794,7 @@ class XstackRunner:
 
         rspmat_sft = shift_rsp(**shift_rsp_kwargs)
         if do_cache:
-            write_rmf(rmf_fname=outfile,prob=rspmat_sft,z=z,**write_rsp_kwargs)
+            write_rmf(rmf_fname=outfile,prob=rspmat_sft,z=z,run_cmd=self.run_cmd,**write_rsp_kwargs)
 
         return rspmat_sft,None,False
 
@@ -953,25 +962,29 @@ class XstackRunner:
                 chan=self.CHANNEL,pi=self.pi_stk_rlz[k],pierr=self.pierr_stk_rlz[k],pi_fname=self.o_pi_fname_rlz[k],
                 expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],rmf_fname=self.o_rmf_fname_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
                 areascal=src_areascal_mean,backscal=src_backscal_mean,corrscal=src_corrscal_mean,
+                run_cmd=self.run_cmd,
             )
             write_bkgpi(
                 chan=self.CHANNEL,bkgpi=self.bkgpi_stk_rlz[k],bkgpierr=self.bkgpierr_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],
                 expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],spec_type="STACKED",z=None,
                 areascal=bkg_areascal_mean,backscal=bkg_backscal_mean,corrscal=bkg_corrscal_mean,
+                run_cmd=self.run_cmd,
             )
             write_arf(
                 arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,specresp=self.specresp_stk_rlz[k],arf_fname=self.o_arf_fname_rlz[k],
                 detchans=len(self.CHANNEL),expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method="FLX",rspnorm=self.rspnorm_rlz[k],
                 srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],pi_totcts_lst=self.pi_totcts_lst_rlz[k],bkgpi_totcts_lst=self.bkgpi_totcts_lst_rlz[k],flg=self.int_flg,spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_rmf(
                 chan=self.CHANNEL,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,iene_lo=self.IENE_LO,iene_hi=self.IENE_HI,prob=self.prob_stk_rlz[k],
                 rmf_fname=self.o_rmf_fname_rlz[k],expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method="FLX",
                 srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
+                run_cmd=self.run_cmd,
             )
             write_fene(
                 srcid_lst=self.srcid_lst_rlz[k],arffene_lst=self.arffene_lst_rlz[k],fene_lst=self.fene_lst_rlz[k],
-                fene_fname=self.o_fene_fname_rlz[k],
+                fene_fname=self.o_fene_fname_rlz[k],run_cmd=self.run_cmd,
             )
 
         self.main_logger.info("")
