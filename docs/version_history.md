@@ -2,8 +2,12 @@
 
 ## v1.1.2 (latest)
 
-- Current documented release in `Xstack/config.py`.
-- Last update field in code: `2026/2/3`.
+- Major performance refactor for on-the-fly stacking, reducing peak RAM and total runtime.
+- Significant bootstrap speedup (bootstrap runtime now close to a single-stack run in typical use).
+- Reduced redundant I/O for faster processing throughput.
+- Added `do_cache` mode to store/reuse per-source rest-frame intermediate files, improving rerun speed.
+- Fixed `bkggrpflg` indexing in background-group handling.
+- Miscellaneous maintenance and documentation updates, including Read the Docs (RTD) integration.
 
 Download link is [here](https://github.com/AstroChensj/Xstack).
 
