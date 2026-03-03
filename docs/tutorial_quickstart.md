@@ -29,13 +29,15 @@ Main outputs:
 - `./results/stacked_rmf.fits`
 - `./results/stacked_fene.fits`
 
+All stacked FITS outputs include command provenance in header `HISTORY` cards.
+
 ### Common CLI Example
 
 ```bash
-runXstack your_filelist.txt \
+  runXstack your_filelist.txt \
   --prefix ./results/stacked_ \
   --rsp_weight_method SHP \
-  --rsp_project_gamma 2.0 \
+  --rsp_proj_gamma 2.0 \
   --flux_energy_lo 1.0 \
   --flux_energy_hi 2.3 \
   --nthreads 20 \

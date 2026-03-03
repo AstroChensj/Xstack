@@ -1,5 +1,9 @@
 # Version History
 
+new features for v1.1.3:
+- Added `same_target` mode for stacking multiple exposures of one target in observed frame.
+- Stacked FITS outputs now record command provenance in header `HISTORY` cards.
+
 ## v1.1.2 (latest)
 
 - Major performance refactor for on-the-fly stacking, reducing peak RAM and total runtime.
@@ -7,7 +11,7 @@
 - Reduced redundant I/O for faster processing throughput.
 - Added `do_cache` mode to store/reuse per-source rest-frame intermediate files, improving rerun speed.
 - Fixed `bkggrpflg` indexing in background-group handling.
-- Miscellaneous maintenance and documentation updates, including Read the Docs (RTD) integration.
+- Miscellaneous maintenance and documentation updates, including read-the-docs integration.
 
 Download link is [here](https://github.com/AstroChensj/Xstack).
 

@@ -125,6 +125,8 @@ For each run (or each bootstrap realization), Xstack writes:
 - first-contributing-energy metadata (`fene`),
 - and log files documenting settings and weights.
 
+For reproducibility, stacked FITS outputs also store the executed command in header `HISTORY` cards.
+
 Interpretation reminder:
 
 - the pipeline is designed to preserve average spectral shape robustly;

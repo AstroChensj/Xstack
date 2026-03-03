@@ -232,4 +232,4 @@ With stacked PI spectrum, stacked background PI spectrum, ARF, and RMF generated
 - Xstack prioritizes preserving average spectral shape.
 - Absolute normalization should be interpreted with care in stacked products.
 - Keep track of `rsp_weight_method`, `int_rng`, and source-selection choices when reporting fitted results.
-- For `SHP`, report the integration band (`flux_energy_lo`, `flux_energy_hi` / `int_rng`) and `rsp_project_gamma` for reproducibility.
+- For `SHP`, report the integration band (`flux_energy_lo`, `flux_energy_hi` / `int_rng`) and `rsp_proj_gamma` for reproducibility.

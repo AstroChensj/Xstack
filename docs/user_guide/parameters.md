@@ -24,7 +24,7 @@ This page documents inputs for:
 |---|---|---|---|
 | `--prefix` | `prefix` | Output file prefix | `./results/stacked_` |
 | `--rsp_weight_method` | `rspwt_method` | Full-response weighting method: `SHP`, `FLX`, `LMN` | `SHP` |
-| `--rsp_project_gamma` | `rspproj_gamma` | Prior photon index used by `SHP` projection | `2.0` |
+| `--rsp_proj_gamma` | `rspproj_gamma` | Prior photon index used by `SHP` projection | `2.0` |
 | `--flux_energy_lo` + `--flux_energy_hi` | `int_rng` | Integration range for `SHP` weights (rest-frame keV) | `1.0`, `2.3` keV |
 | `--nthreads` | `nthreads` | CPU threads for shifting/stacking pipeline | `10` (CLI), `1` (Python) |
 | `--ene_trc` | `ene_trc` | Truncate unreliable low-energy ARF/PI bins below threshold | `0.0` / `None` |
@@ -70,6 +70,8 @@ For non-bootstrap runs, Xstack writes:
 - `<prefix>runXstack.log`
 
 In bootstrap mode, each realization gets an index in the output names.
+
+Stacked FITS outputs include command provenance in header `HISTORY` cards.
 
 ## Same-target Mode Notes
 
