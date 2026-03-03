@@ -89,6 +89,8 @@ The output will be:
   
 - and first contributing energy file `FENE`.
 
+> New in `same_target` mode: you can stack **multiple exposures of one target** directly in observed frame. In this mode, Xstack skips rest-frame shifting, Galactic NH correction, and pre-scaling of background PI.
+
 ### :one: Command line version
 
 - A simple and quick example:
@@ -135,6 +137,19 @@ The output will be:
   runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
   ```
 
+- If your `filelist` contains multiple exposures of the **same target**, use `same_target` mode:
+
+  ```shell
+  runXstack your_filelist.txt --prefix ./results/stacked_ --same_target
+  ```
+
+  - In this mode:
+    - source/background PI are summed directly (integer counts preserved at output);
+    - full response (`ARF*RMF`) is stacked with `FLX` weighting;
+    - stacked `EXPOSURE` is the summed exposure;
+    - stacked src/bkg `AREASCAL`, `BACKSCAL`, `CORRSCAL` are written as means of inputs;
+    - if `var(x/mean(x))` is large for any of these three scale keywords, a warning is written in the log file.
+
 - You can run `runXstack -h` to get the documentation of all the above parameters. Or equivalently check below:
 
   | Parameters | Description | Default values|
@@ -150,6 +165,7 @@ The output will be:
   |`--ene_trc`|energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)|0.0|
   |`--extended`|whether or not this is an extended source|`False` (point source)|
   |`--same_rmf`|specify the name of common rmf, if all sources are to use the same rmf|None|
+  |`--same_target`|stack multiple exposures of the same target in observed frame (skip rest-frame shifting/GalNH correction; direct src+bkg PI summation; FLX response weighting)|False|
   |`--do_cache`|save and load individual rest-frame files|False|
   |`--bootstrap`|activate `bootstrap` mode|False|
   |`--num_bootstrap`|number of bootstrap experiments in `bootstrap` mode|10|
@@ -188,6 +204,7 @@ The output will be:
       extended=False,                                 # whether or not this is an extended source
       nthreads=50,                                    # number of cpus used for response shifting
       prefix="./results/stacked_",                    # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+      same_target=False,                              # if True: stack multiple exposures of one target in observed frame
   ).run()
   ```
 
@@ -227,6 +244,7 @@ The output will be:
       num_bootstrap=20,							                  # number of bootstrap experiments in `bootstrap` method
       bootstrap_portion=1.0,							            # portion to resample in `bootstrap` method
       prefix="./results/stacked_",                    # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+      same_target=False,                              # if True: stack multiple exposures of one target in observed frame
   ).run()
   ```
 

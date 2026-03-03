@@ -50,6 +50,42 @@ def read_rsp(rsp_fname):
 	return prob,z
 
 
+def read_rsp_from_arf_rmf(arf_fname,rmf_fname):
+	"""
+	Read observer-frame full response matrix (RSP = ARF * RMF).
+
+	Parameters
+	----------
+	arf_fname : str
+		ARF file name.
+	rmf_fname : str
+		RMF file name.
+
+	Returns
+	-------
+	rspmat : numpy.ndarray
+		Observer-frame full response matrix.
+	"""
+	with fits.open(arf_fname) as hdu:
+		arf = hdu["SPECRESP"].data
+	specresp = arf["SPECRESP"]
+	arfene_lo = arf["ENERG_LO"]
+	arfene_hi = arf["ENERG_HI"]
+
+	with fits.open(rmf_fname) as hdu:
+		mat = hdu["MATRIX"].data
+		ebo = hdu["EBOUNDS"].data
+	iene_lo = mat["ENERG_LO"]
+	iene_hi = mat["ENERG_HI"]
+
+	assert np.allclose(arfene_lo,iene_lo), f"ARF/RMF input energy grids do not match: {arf_fname} vs {rmf_fname}"
+	assert np.allclose(arfene_hi,iene_hi), f"ARF/RMF input energy grids do not match: {arf_fname} vs {rmf_fname}"
+
+	f_chan_0 = get_tlmin_from_header(rmf_fname=rmf_fname)
+	prob = get_prob(mat=mat,ebo=ebo,f_chan_0=f_chan_0)
+	return prob * specresp[:,np.newaxis]
+
+
 def shift_rsp(
 		arf_fname,rmf_fname,z,nh_file=None,nh=1e20,ene_trc=None,
 		ene_lo=None,ene_hi=None,
@@ -57,7 +93,8 @@ def shift_rsp(
 	"""
 	Rest-frame shifting the ARF&RMF. This is literally done by three steps: 
 
-	1. Combine input ARF and RMF into a single RSP matrix (full response);
+	1. Combine GalNH-corrected ARF and RMF into a single RSP matrix 
+	   (full response);
 	2. Shift in the direction of output channel energy. That is to say, 
 	   shift and broaden the probability profile for each input energy 
 	   (i.e. when the detector receive a photon with some input energy, 

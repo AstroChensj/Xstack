@@ -129,3 +129,25 @@ Interpretation reminder:
 
 - the pipeline is designed to preserve average spectral shape robustly;
 - do not over-interpret absolute normalization without additional calibration context.
+
+## 2.2.9 Same-target Mode (Multiple Exposures of One Target)
+
+Xstack also provides `same_target` mode for coadding repeated exposures of one target.
+
+Conceptual difference from standard mode:
+
+- standard mode: rest-frame shifting + multi-target population stacking,
+- `same_target` mode: observed-frame exposure coadd for one target.
+
+In `same_target` mode:
+
+- rest-frame shifting is skipped,
+- Galactic NH correction is skipped,
+- source/background PI are summed directly (no pre-scaling of background PI),
+- full response is stacked using `FLX` weighting,
+- stacked `EXPOSURE` is the summed exposure,
+- stacked src/bkg `AREASCAL`, `BACKSCAL`, `CORRSCAL` are written as input means.
+
+Quality guard in logs:
+
+- if `var(x/mean(x))` is large for any of `AREASCAL`, `BACKSCAL`, or `CORRSCAL`, a warning is logged.

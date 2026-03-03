@@ -18,12 +18,12 @@ from pathlib import Path
 import time
 from Xstack.utils.pi import (
     read_pi,shift_pi,
-    get_bkgscal,get_expo,get_rega,
+    get_bkgscal,get_expo,get_rega,get_areascal_backscal_corrscal,
     calc_pi_error,calc_bkgpi_error,
     write_pi,write_bkgpi
 )
 from Xstack.utils.rsp import (
-    read_rsp,shift_rsp,
+    read_rsp,shift_rsp,read_rsp_from_arf_rmf,
     get_prob,compute_rspwt,rescale_rspmat,
     project_rspmat,extract_arf_rmf_from_rspmat,
     get_tlmin_from_header,
@@ -125,6 +125,12 @@ class XstackRunner:
         will be saved under the same path as ``pifile``. This will save a lot 
         of running time, at the cost of additional disk space (and burden on
         I/O). Defaults to ``False``.
+    same_target : bool, optional
+        Stack multiple exposures of the same target in observed frame.
+        In this mode, rest-frame shifting, Galactic NH correction, and
+        source-to-background scaling are disabled. Source/background PI are
+        summed directly, and full response is weighted using ``FLX`` mode.
+        Defaults to ``False``.
         
     Examples
     --------
@@ -150,6 +156,7 @@ class XstackRunner:
             Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,
             bootstrap=False,num_bootstrap=10,bootstrap_portion=1.0,
             prefix="./results/stacked_",
+            same_target=False,
             do_cache=False,
         ):
         """
@@ -197,6 +204,7 @@ class XstackRunner:
         self.extended = extended
         self.nthreads = nthreads
         self.Nsrc = len(pifile_lst)
+        self.same_target = same_target
         self.do_cache = do_cache
 
         #--- read ARF energy edges and RMF energy edges
@@ -283,31 +291,27 @@ class XstackRunner:
 
     def run(self):
         """
-        Shift all PIs + bkgPIs + ARFs + RMFs to rest-frame and stack in one go.
-
+        Run the main procedure of X-ray spectral shifting and stacking.
+        Do ``run_standard_mode()`` if ``same_target==False``, and do 
+        ``run_same_target_mode()`` if ``same_target==True``.
 
         Returns
         -------
         pi_stk_rlz : numpy.ndarray
             Stacked PI spectra from all realizations, with shape ``(num_bootstrap, Nchan)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Nchan)``.
-
         pierr_stk_rlz : numpy.ndarray
             Stacked PI err spectra from all realizations, with shape ``(num_bootstrap, Nchan)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Nchan)``.
-
         bkgpi_stk_rlz : numpy.ndarray
             Stacked bkg PI spectra from all realizations, with shape ``(num_bootstrap, Nchan)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Nchan)``.
-
         bkgpierr_stk_rlz : numpy.ndarray
             Stacked bkg PI err spectra from all realizations, with shape ``(num_bootstrap, Nchan)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Nchan)``.
-
         specresp_stk_rlz : numpy.ndarray
             Stacked ARFs from all realizations, with shape ``(num_bootstrap, Niene)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Niene)``.
-
         prob_stk_rlz : numpy.ndarray
             Stacked RMF matrices from all realizations, with shape ``(num_bootstrap, Niene, Nene)``.
             Note that if ``bootstrap==False``, the shape is simply ``(1, Niene, Nene)``.
@@ -323,28 +327,53 @@ class XstackRunner:
         self.main_logger.info(f"NH range: {np.min(self.nh_lst)} -- {np.max(self.nh_lst)}")
         self.main_logger.info(f"NH file: {self.nh_file if self.nh_file is not None else 'None'}")
         self.main_logger.info(f"RSP weighting method: {self.rspwt_method}")
-        self.main_logger.info(f"RSP projection gamma: {self.rspproj_gamma}")
-        self.main_logger.info(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV (used only in `SHP` mode)")
+        if self.rspwt_method == "SHP":
+            self.main_logger.info(f"RSP projection gamma: {self.rspproj_gamma}")
+            self.main_logger.info(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV")
         self.main_logger.info(f"ARF Truncation energy: {self.ene_trc} keV")
         self.main_logger.info(f"Source type: {'extended sources' if self.extended else 'point sources'}")
         self.main_logger.info(f"Number of CPUs used for shifting RMF: {self.nthreads}")
         self.main_logger.info(f"Number of background groups: {self.Nbkggrp}")
+        self.main_logger.info(f"Same-target mode: {'TRUE' if self.same_target else 'FALSE'}")
+        self.main_logger.info(f"Bootstrap: {'TRUE' if self.bootstrap else 'FALSE'}")
         if self.bootstrap:
-            self.main_logger.info(f"Bootstrap: TRUE")
             self.main_logger.info(f"Number of realizations: {self.num_bootstrap}")
             self.main_logger.info(f"Fraction of sources to participate bootstrap: {self.bootstrap_portion}")
-        else:
-            self.main_logger.info(f"Bootstrap: FALSE")
+        self.main_logger.info(f"Do_cache: {'TRUE' if self.do_cache else 'FALSE'}")
         if self.do_cache:
             self.main_logger.info(f"Do_cache: You have chosen to save and load individual rest-frame files. These files are saved under individual source directories. Please ensure you have write permissions.")
         self.main_logger.info(f"Output directory: {self.outdir}")
-        self.main_logger.info(f"Output PI spectrum (base)name: {self.o_pi_fname_rlz[0]}")
-        self.main_logger.info(f"Output bkg PI spectrum (base)name: {self.o_bkgpi_fname_rlz[0]}")
-        self.main_logger.info(f"Output ARF (base)name: {self.o_arf_fname_rlz[0]}")
-        self.main_logger.info(f"Output RMF (base)name: {self.o_rmf_fname_rlz[0]}")
-        self.main_logger.info(f"Output FENE (base)name: {self.o_fene_fname_rlz[0]}")
+        self.main_logger.info(f"Output PI spectrum {'base' if self.bootstrap else ''}name: {self.o_pi_fname_rlz[0]}")
+        self.main_logger.info(f"Output bkg PI spectrum {'base' if self.bootstrap else ''}name: {self.o_bkgpi_fname_rlz[0]}")
+        self.main_logger.info(f"Output ARF {'base' if self.bootstrap else ''}name: {self.o_arf_fname_rlz[0]}")
+        self.main_logger.info(f"Output RMF {'base' if self.bootstrap else ''}name: {self.o_rmf_fname_rlz[0]}")
+        self.main_logger.info(f"Output FENE {'base' if self.bootstrap else ''}name: {self.o_fene_fname_rlz[0]}")
         self.main_logger.info("*******************************************************")
+
+        if self.same_target:
+            return self.run_same_target_mode()
         
+        else:
+            return self.run_standard_mode()
+        
+
+    #====================================================
+    ### standard mode: rest-frame shifting + stacking ###
+    #====================================================
+    def run_standard_mode(self):
+        """
+        STANDARD MODE:
+
+        In this mode, we will do rest-frame shifting for each source, and 
+        then do stacking. Background spectra are scaled to corresponding 
+        source region size. Complete treatment of full response. 
+        This is the default mode, and is recommended when you are stacking 
+        different sources at different redshifts.
+        """
+        self.main_logger.info("**************** STANDARD MODE ACTIVE *****************")
+        self.main_logger.info("Will do rest-frame shifting for each source, and then do stacking.")
+        self.main_logger.info("Background spectra are scaled to corresponding source region size. Complete treatment of full response.")
+        self.main_logger.info("This is the recommended mode when you are stacking different sources at different redshifts.")
         #--- rest-frame shifting
         ##--- NOTE: we shift all sources regardless of bootstrap to save run time
         self.main_logger.info("")
@@ -357,7 +386,7 @@ class XstackRunner:
             # return_as="generator",
             # pre_dispatch=self.nthreads,
         )(
-            delayed(self._run_single_source)(i)
+            delayed(self._shift_all_to_restframe)(i)
             for i in tqdm(range(self.Nsrc))
         )
         peak_rss_sft = get_ram_gb() # peak RAM usage for shifting
@@ -507,10 +536,10 @@ class XstackRunner:
         return self.pi_stk_rlz,self.pierr_stk_rlz,self.bkgpi_stk_rlz,self.bkgpierr_stk_rlz,self.specresp_stk_rlz,self.prob_stk_rlz
     
 
-    def _run_single_source(self,i):
+    def _shift_all_to_restframe(self,i):
         """
         Shift single spectrum & response to rest-frame.
-        This is an internal function for `run`.
+        This is an internal function for ``run_standard_mode()``.
 
         Paramters
         ---------
@@ -664,7 +693,7 @@ class XstackRunner:
         shift_pi_kwargs,write_pi_kwargs,
     ):
         """
-        Internal function for ``_run_single_source()``. Either load rest-frame PI from
+        Internal function for ``_shift_all_to_restframe()``. Either load rest-frame PI from
         existing ``.rf`` file (when ``do_cache`` is activated), or re-do the rest-frame 
         shifting.
 
@@ -717,7 +746,7 @@ class XstackRunner:
         shift_rsp_kwargs,write_rsp_kwargs,
     ):
         """
-        Internal function for ``_run_single_source()``. Either load rest-frame RSP from
+        Internal function for ``_shift_all_to_restframe()``. Either load rest-frame RSP from
         existing ``.rf.rsp`` file (when ``do_cache`` is activated), or re-do the rest-frame 
         shifting.
 
@@ -758,3 +787,235 @@ class XstackRunner:
             write_rmf(rmf_fname=outfile,prob=rspmat_sft,z=z,**write_rsp_kwargs)
 
         return rspmat_sft,None,False
+
+
+    #============================================================================
+    ### same-target mode: stack in observed frame without rest-frame shifting ###
+    #============================================================================
+    def run_same_target_mode(self):
+        """
+        SAME-TARGET MODE: 
+
+        Stack multiple exposures of the same target in observed frame. 
+        In this mode, rest-frame shifting, Galactic NH correction, and
+        source-to-background scaling are disabled. Source/background PI are
+        summed directly, and full response is weighted using ``FLX`` mode.
+        """
+        self.main_logger.info("")
+        self.main_logger.info("************** SAME-TARGET MODE ACTIVE ***************")
+        self.main_logger.info("No rest-frame shifting, no Galactic NH correction, and no source-to-background scaling.")
+        self.main_logger.info("Source/background PI are summed directly; full response weighted in FLX mode.")
+        if self.rspwt_method != "FLX":
+            self.main_logger.warning(f"`rspwt_method={self.rspwt_method}` is ignored in same-target mode. Using `FLX`.")
+        if self.do_cache:
+            self.main_logger.warning("`do_cache` is ignored in same-target mode (no rest-frame intermediates are generated).")
+
+        results = []
+        src_areascal_lst = []
+        src_backscal_lst = []
+        src_corrscal_lst = []
+        bkg_areascal_lst = []
+        bkg_backscal_lst = []
+        bkg_corrscal_lst = []
+
+        self.main_logger.info("")
+        self.main_logger.info("************* Reading observed exposures *************")
+        t0 = time.time()
+        for i in tqdm(range(self.Nsrc),desc="reading"):
+            pifile = self.pifile_lst[i]
+            arffile = self.arffile_lst[i]
+            rmffile = self.rmffile_lst[i]
+            expo = get_expo(pifile)
+            rega = get_rega(pifile)
+
+            pi_chan,pi_obs,_ = read_pi(pi_fname=pifile)
+            assert np.array_equal(pi_chan,self.CHANNEL), f"PI channel grid mismatch in {pifile}"
+
+            if self.bkgpifile_lst is not None and self.bkgpifile_lst[i] is not None:
+                bkgpifile = self.bkgpifile_lst[i]
+                bkg_chan,bkgpi_obs,_ = read_pi(pi_fname=bkgpifile)
+                assert np.array_equal(bkg_chan,self.CHANNEL), f"BKG PI channel grid mismatch in {bkgpifile}"
+                bkg_areascal,bkg_backscal,bkg_corrscal = get_areascal_backscal_corrscal(bkgpifile)
+                if bkg_areascal<0 or bkg_backscal<0 or bkg_corrscal<0:
+                    self.main_logger.warning(f"WARNING!! Invalid scaling factor(s) found in {bkgpifile}. Setting all bkg scaling factors to 1.0.")
+                    bkg_areascal,bkg_backscal,bkg_corrscal = 1.0,1.0,1.0
+            else:
+                bkgpi_obs = np.zeros_like(pi_obs,dtype=pi_obs.dtype)
+                bkg_areascal,bkg_backscal,bkg_corrscal = 1.0,1.0,1.0
+
+            src_areascal,src_backscal,src_corrscal = get_areascal_backscal_corrscal(pifile)
+            if src_areascal<0 or src_backscal<0 or src_corrscal<0:
+                self.main_logger.warning(f"WARNING!! Invalid scaling factor(s) found in {pifile}. Setting all source scaling factors to 1.0.")
+                src_areascal,src_backscal,src_corrscal = 1.0,1.0,1.0
+            rspmat_obs = read_rsp_from_arf_rmf(arf_fname=arffile,rmf_fname=rmffile)
+
+            rsp1d_obs = project_rspmat(
+                rspmat=rspmat_obs,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
+                proj_axis="CHANNEL",gamma=self.rspproj_gamma,
+            )
+            rspwt = compute_rspwt(
+                specresp=rsp1d_obs,pi=pi_obs,z=0.0,bkgpi=bkgpi_obs,bkgscal=1.0,expo=expo,ene_wd=self.ENE_WD,flg=self.int_flg,
+                rspwt_method="FLX",extended=self.extended,rega=rega,
+            )
+
+            arf_obs = project_rspmat(
+                rspmat=rspmat_obs,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,
+                proj_axis="MODEL",
+            )
+            arf_nonzero_mask = (arf_obs!=0)
+            arffene = self.IENE_CE[arf_nonzero_mask][0] if arf_nonzero_mask.any() else -1
+            pi_nonzero_mask = (pi_obs!=0)
+            fene = self.ENE_CE[pi_nonzero_mask][0] if pi_nonzero_mask.any() else -1
+
+            results.append((pi_obs,bkgpi_obs,rspmat_obs,rspwt,arffene,fene,expo,rega))
+            src_areascal_lst.append(src_areascal)
+            src_backscal_lst.append(src_backscal)
+            src_corrscal_lst.append(src_corrscal)
+            bkg_areascal_lst.append(bkg_areascal)
+            bkg_backscal_lst.append(bkg_backscal)
+            bkg_corrscal_lst.append(bkg_corrscal)
+        self.main_logger.info(f"Total time used for reading observed exposures: {time.time()-t0} s")
+
+        self.main_logger.info("")
+        self.main_logger.info("******************* Stacking ... **********************")
+        t0_all = time.time()
+        for k in range(self.num_bootstrap):
+            t0 = time.time()
+            self.main_logger.info("")
+            self.main_logger.info(f"=== Realization {k:0{len(str(self.num_bootstrap))}d} ===")
+            for i,(pi_obs,bkgpi_obs,rspmat_obs,rspwt,arffene,fene,expo,rega) in enumerate(tqdm(results,total=self.Nsrc,desc="stacking")):
+                bwt_src = self.bwt_lst_rlz[k][i]
+                self.pi_stk_rlz[k] += pi_obs * bwt_src
+                self.bkgpi_stk_rlz[k] += bkgpi_obs * bwt_src
+                self.rspmat_stk_rlz[k] += rspmat_obs * rspwt * bwt_src
+
+                self.bkgscal_lst_rlz[k].append(1.0)
+                self.rspwt_lst_rlz[k].append(rspwt)
+                self.expo_lst_rlz[k].append(expo)
+                self.rega_lst_rlz[k].append(rega)
+                self.arffene_lst_rlz[k].append(arffene)
+                self.fene_lst_rlz[k].append(fene)
+                self.pi_totcts_lst_rlz[k].append(np.sum(pi_obs))
+                self.bkgpi_totcts_lst_rlz[k].append(np.sum(bkgpi_obs))
+                self.bkgpi_sft_lst_rlz[k].append(bkgpi_obs)
+
+            self.bkgscal_lst_rlz[k] = np.array(self.bkgscal_lst_rlz[k])
+            self.bkgpi_sft_lst_rlz[k] = np.array(self.bkgpi_sft_lst_rlz[k])
+            self.rspwt_lst_rlz[k] = np.array(self.rspwt_lst_rlz[k])
+            self.expo_lst_rlz[k] = np.array(self.expo_lst_rlz[k])
+            self.rega_lst_rlz[k] = np.array(self.rega_lst_rlz[k])
+            self.arffene_lst_rlz[k] = np.array(self.arffene_lst_rlz[k])
+            self.fene_lst_rlz[k] = np.array(self.fene_lst_rlz[k])
+            self.pi_totcts_lst_rlz[k] = np.array(self.pi_totcts_lst_rlz[k])
+            self.bkgpi_totcts_lst_rlz[k] = np.array(self.bkgpi_totcts_lst_rlz[k])
+            self.main_logger.info(f"Total time used for stacking (realization {k:0{len(str(self.num_bootstrap))}d}): {time.time()-t0} s")
+        self.main_logger.info("----")
+        self.main_logger.info(f"Total time used for all stacking: {time.time()-t0_all} s")
+
+        self.main_logger.info("")
+        self.main_logger.info("************** PI error calculation ... ***************")
+        t0 = time.time()
+        for k in range(self.num_bootstrap):
+            self.pi_stk_rlz[k],self.pierr_stk_rlz[k] = calc_pi_error(pi_stk=self.pi_stk_rlz[k])
+            self.bkgpi_stk_rlz[k],self.bkgpierr_stk_rlz[k] = calc_pi_error(pi_stk=self.bkgpi_stk_rlz[k])
+        self.main_logger.info(f"Total time used for PI error calculation: {time.time()-t0} s.")
+
+        self.main_logger.info("")
+        self.main_logger.info("************** Extracting ARF & RMF ... ***************")
+        t0 = time.time()
+        for k in range(self.num_bootstrap):
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k] = rescale_rspmat(
+                rspmat=self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
+                expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
+                rspwt_method="FLX",extended=self.extended,
+            )
+            self.specresp_stk_rlz[k],self.prob_stk_rlz[k] = extract_arf_rmf_from_rspmat(self.rspmat_stk_rlz[k])
+        self.main_logger.info(f"Total time used for ARF & RMF extraction: {time.time()-t0} s.")
+
+        src_areascal_mean = float(np.mean(src_areascal_lst))
+        src_backscal_mean = float(np.mean(src_backscal_lst))
+        src_corrscal_mean = float(np.mean(src_corrscal_lst))
+        bkg_areascal_mean = float(np.mean(bkg_areascal_lst))
+        bkg_backscal_mean = float(np.mean(bkg_backscal_lst))
+        bkg_corrscal_mean = float(np.mean(bkg_corrscal_lst))
+        self._warn_scaled_variance("SRC AREASCAL",src_areascal_lst)
+        self._warn_scaled_variance("SRC BACKSCAL",src_backscal_lst)
+        self._warn_scaled_variance("SRC CORRSCAL",src_corrscal_lst)
+        self._warn_scaled_variance("BKG AREASCAL",bkg_areascal_lst)
+        self._warn_scaled_variance("BKG BACKSCAL",bkg_backscal_lst)
+        self._warn_scaled_variance("BKG CORRSCAL",bkg_corrscal_lst)
+
+        self.main_logger.info("")
+        self.main_logger.info("****************** Saving files ... *******************")
+        for k in range(self.num_bootstrap):
+            write_pi(
+                chan=self.CHANNEL,pi=self.pi_stk_rlz[k],pierr=self.pierr_stk_rlz[k],pi_fname=self.o_pi_fname_rlz[k],
+                expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],rmf_fname=self.o_rmf_fname_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
+                areascal=src_areascal_mean,backscal=src_backscal_mean,corrscal=src_corrscal_mean,
+            )
+            write_bkgpi(
+                chan=self.CHANNEL,bkgpi=self.bkgpi_stk_rlz[k],bkgpierr=self.bkgpierr_stk_rlz[k],bkgpi_fname=self.o_bkgpi_fname_rlz[k],
+                expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],spec_type="STACKED",z=None,
+                areascal=bkg_areascal_mean,backscal=bkg_backscal_mean,corrscal=bkg_corrscal_mean,
+            )
+            write_arf(
+                arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,specresp=self.specresp_stk_rlz[k],arf_fname=self.o_arf_fname_rlz[k],
+                detchans=len(self.CHANNEL),expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method="FLX",rspnorm=self.rspnorm_rlz[k],
+                srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],pi_totcts_lst=self.pi_totcts_lst_rlz[k],bkgpi_totcts_lst=self.bkgpi_totcts_lst_rlz[k],flg=self.int_flg,spec_type="STACKED",z=None,
+            )
+            write_rmf(
+                chan=self.CHANNEL,ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,iene_lo=self.IENE_LO,iene_hi=self.IENE_HI,prob=self.prob_stk_rlz[k],
+                rmf_fname=self.o_rmf_fname_rlz[k],expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method="FLX",
+                srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],arf_fname=self.o_arf_fname_rlz[k],spec_type="STACKED",z=None,
+            )
+            write_fene(
+                srcid_lst=self.srcid_lst_rlz[k],arffene_lst=self.arffene_lst_rlz[k],fene_lst=self.fene_lst_rlz[k],
+                fene_fname=self.o_fene_fname_rlz[k],
+            )
+
+        self.main_logger.info("")
+        self.main_logger.info(f"#######################################################")
+        self.main_logger.info(f"### Same-target stacking ({self.Nsrc} exposures) completed! ###")
+        self.main_logger.info(f"#######################################################")
+        if self.bootstrap:
+            self.main_logger.info(f"Stacked PI spectrum saved to: {self.o_pi_fname_rlz[0]} --- {self.o_pi_fname_rlz[-1]}")
+            self.main_logger.info(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_fname_rlz[0]} --- {self.o_bkgpi_fname_rlz[-1]}")
+            self.main_logger.info(f"Stacked ARF saved to: {self.o_arf_fname_rlz[0]} --- {self.o_arf_fname_rlz[-1]}")
+            self.main_logger.info(f"Stacked RMF saved to: {self.o_rmf_fname_rlz[0]} --- {self.o_rmf_fname_rlz[-1]}")
+            self.main_logger.info(f"Stacked FENE saved to: {self.o_fene_fname_rlz[0]} --- {self.o_fene_fname_rlz[-1]}")
+        else:
+            self.main_logger.info(f"Stacked PI spectrum saved to: {self.o_pi_fname_rlz[0]}")
+            self.main_logger.info(f"Stacked BKGPI spectrum saved to: {self.o_bkgpi_fname_rlz[0]}")
+            self.main_logger.info(f"Stacked ARF saved to: {self.o_arf_fname_rlz[0]}")
+            self.main_logger.info(f"Stacked RMF saved to: {self.o_rmf_fname_rlz[0]}")
+            self.main_logger.info(f"Stacked FENE saved to: {self.o_fene_fname_rlz[0]}")
+        self.main_logger.info("*******************************************************")
+
+        print(f"Finished. Please check {self.logger_fname} for detailed log.")
+        return self.pi_stk_rlz,self.pierr_stk_rlz,self.bkgpi_stk_rlz,self.bkgpierr_stk_rlz,self.specresp_stk_rlz,self.prob_stk_rlz
+    
+
+    def _warn_scaled_variance(self,name,values,threshold=0.1):
+        """
+        Log warning if variance of (values/mean(values)) is large.
+
+        Parameters
+        ----------
+        name : str
+            Quantity name for logging.
+        values : numpy.ndarray or list
+            Values to check.
+        threshold : float, optional
+            Warning threshold of scaled variance. Defaults to ``0.1``.
+        """
+        values = np.asarray(values,dtype=float)
+        mean = np.mean(values)
+        if not np.isfinite(mean) or np.isclose(mean,0.0):
+            self.main_logger.warning(f"{name}: mean is zero/non-finite; cannot evaluate scaled variance robustly.")
+            return
+        scaled_var = np.var(values/mean)
+        self.main_logger.info(f"{name}: mean={mean:.6g}, var(x/mean)={scaled_var:.6g}")
+        if scaled_var > threshold:
+            self.main_logger.warning(
+                f"{name}: large scaled variance detected (var(x/mean)={scaled_var:.6g} > {threshold:.3g})."
+            )

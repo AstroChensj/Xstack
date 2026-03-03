@@ -344,9 +344,35 @@ def get_rega(src_fname):
     """
     try:
         src_rega = fits.getval(src_fname,keyword="REGAREA",extname="SPECTRUM")
-    except Exception as e:
+    except Exception:
         src_rega = 1
     return src_rega
+
+
+def get_areascal_backscal_corrscal(src_fname):
+    """
+    Read scaling keywords from ``src_fname`` header.
+
+    Parameters
+    ----------
+    src_fname : str
+        PI spectrum file name.
+
+    Returns
+    -------
+    areascal : float
+        Header keyword ``AREASCAL``. -999 if not found.
+    backscal : float
+        Header keyword ``BACKSCAL``. -999 if not found.
+    corrscal : float
+        Header keyword ``CORRSCAL``. -999 if not found.
+    """
+    with fits.open(src_fname) as hdu:
+        hdr = hdu["SPECTRUM"].header
+    areascal = float(hdr.get("AREASCAL",-999))
+    backscal = float(hdr.get("BACKSCAL",-999))
+    corrscal = float(hdr.get("CORRSCAL",-999))
+    return areascal,backscal,corrscal
 
 
 def make_bkggrpflg(bkgscal_lst,Nbkggrp=10):
@@ -404,6 +430,7 @@ def write_pi(
         chan,pi,pierr=None,pi_fname="stacked_pi.fits",
         expo=10,rega=1,bkgpi_fname=None,rmf_fname=None,arf_fname=None,
         spec_type="STACKED",z=None,
+        areascal=1.0,backscal=1.0,corrscal=1.0,
 ):
     """
     Write PI spectrum file according to OGIP standards.
@@ -436,6 +463,12 @@ def write_pi(
         mode, while float in ``RESTFRAM`` mode. 
     z : float, optional
         Redshift.
+    areascal : float, optional
+        Header keyword ``AREASCAL``. Defaults to ``1.0``.
+    backscal : float, optional
+        Header keyword ``BACKSCAL``. Defaults to ``1.0``.
+    corrscal : float, optional
+        Header keyword ``CORRSCAL``. Defaults to ``1.0``.
 
     Returns
     -------
@@ -471,13 +504,13 @@ def write_pi(
     if bkgpi_fname is not None:
         # we assume all files under the same path for xspec convenience
         hdu_spectrum.header["BACKFILE"] = (os.path.basename(bkgpi_fname), f"associated background PI spectrum")   
-    hdu_spectrum.header["BACKSCAL"] = 1.0
-    hdu_spectrum.header["CORRSCAL"] = 1.0
     if rmf_fname is not None:
         hdu_spectrum.header["RESPFILE"] = (os.path.basename(rmf_fname), f"associated response matrix file")
     if arf_fname is not None:
         hdu_spectrum.header["ANCRFILE"] = (os.path.basename(arf_fname), f"associated ancillary response file")
-    hdu_spectrum.header["AREASCAL"] = 1.0
+    hdu_spectrum.header["AREASCAL"] = areascal
+    hdu_spectrum.header["BACKSCAL"] = backscal
+    hdu_spectrum.header["CORRSCAL"] = corrscal
     hdu_spectrum.header["HDUCLASS"] = "OGIP"
     hdu_spectrum.header["HDUCLAS1"] = "SPECTRUM"
     hdu_spectrum.header["HDUVERS"] = "1.2.1"
@@ -499,6 +532,7 @@ def write_bkgpi(
         chan,bkgpi,bkgpierr,bkgpi_fname="stacked_bkgpi.fits",
         expo=10,rega=1,
         spec_type="STACKED",z=None,
+        areascal=1.0,backscal=1.0,corrscal=1.0,
 ):
     """
     Write bkg PI spectrum file according to OGIP standards.
@@ -524,6 +558,12 @@ def write_bkgpi(
         Counts are stored as float regardless.
     z : float, optional
         Redshift.
+    areascal : float, optional
+        Header keyword ``AREASCAL``. Defaults to ``1.0``.
+    backscal : float, optional
+        Header keyword ``BACKSCAL``. Defaults to ``1.0``.
+    corrscal : float, optional
+        Header keyword ``CORRSCAL``. Defaults to ``1.0``.
 
     Returns
     -------
@@ -534,9 +574,10 @@ def write_bkgpi(
     primary_hdu = fits.PrimaryHDU()
     hdu_lst.append(primary_hdu)
     
+    counts_format = "J" if np.issubdtype(np.asarray(bkgpi).dtype,np.integer) else "D"
     cols = [
         fits.Column(name="CHANNEL",format="I",array=chan),
-        fits.Column(name="COUNTS",format="D",array=bkgpi), # BKG counts: float
+        fits.Column(name="COUNTS",format=counts_format,array=bkgpi),
         fits.Column(name="STAT_ERR",format="D",array=bkgpierr),
     ]
     hdu_spectrum = fits.BinTableHDU.from_columns(cols, name="SPECTRUM")
@@ -551,11 +592,11 @@ def write_bkgpi(
     if z is not None:
         hdu_spectrum.header["REDSHIFT"] = z
     hdu_spectrum.header["BACKFILE"] = "None"
-    hdu_spectrum.header["BACKSCAL"] = 1.0
-    hdu_spectrum.header["CORRSCAL"] = 1.0
     hdu_spectrum.header["RESPFILE"] = "None"
     hdu_spectrum.header["ANCRFILE"] = "None"
-    hdu_spectrum.header["AREASCAL"] = 1.0
+    hdu_spectrum.header["AREASCAL"] = areascal
+    hdu_spectrum.header["BACKSCAL"] = backscal
+    hdu_spectrum.header["CORRSCAL"] = corrscal
     hdu_spectrum.header["HDUCLASS"] = "OGIP"
     hdu_spectrum.header["HDUCLAS1"] = "SPECTRUM"
     hdu_spectrum.header["HDUVERS"] = "1.2.1"
@@ -622,7 +663,7 @@ def make_grpflg(src_fname,grp_fname=None,method="EDGE",rmf_fname="",eelo=None,ee
             chan = data["CHANNEL"]
             try:
                 src_rmf = head["RESPFILE"]
-            except Exception as e:
+            except Exception:
                 src_rmf = ""
         
         # the RMF file must either be specified as `rmf_fname`, or specified in the header of `src_fname`

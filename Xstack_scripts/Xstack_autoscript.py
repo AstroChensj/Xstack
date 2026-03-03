@@ -108,6 +108,7 @@ def build_parser():
 	parser.add_argument("--ene_trc", type=float, default=0.0, help="energy below which the ARF is manually truncated (e.g., 0.2 keV for eROSITA)")
 	parser.add_argument("--extended", action="store_true", help="whether or not this is an extended source")
 	parser.add_argument("--same_rmf", type=str, default=None, help="specify the name of common rmf, if all sources are to use the same rmf")
+	parser.add_argument("--same_target", action="store_true", help="stack multiple exposures of the same target (no rest-frame shifting, no Galactic NH correction, direct src/bkg PI summation)")
 	parser.add_argument("--do_cache", action="store_true", help="save and load individual rest-frame files")
 	# below are for bootstrap
 	parser.add_argument("--bootstrap", action="store_true", help="activate bootstrap mode")
@@ -120,7 +121,6 @@ def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 	"""
 	Read one entry from `filelist` (path to PI spectrum), return path to 
 	PI spectrum, ARF, RMF, and values of redshift and Galactic absorption.
-
 	
 	Parameters
 	----------
@@ -136,7 +136,6 @@ def read_entry(filename,same_rmf=None,check_bkg_arf=None):
 		a warning will be issued. This is to ensure that the background 
 		spectrum is properly matched to the source spectrum.
 
-	
 	Returns
 	-------
 	filename : str
@@ -265,6 +264,7 @@ def main(argv=None):
 		num_bootstrap=args.num_bootstrap,               # number of bootstrap experiments in `bootstrap` method
 		bootstrap_portion=args.bootstrap_portion,       # portion to resample in `bootstrap` method
 		prefix=args.prefix,                             # prefix for output stacked PI, BKGPI, ARF, RMF, FENE
+		same_target=True if args.same_target else False,# stack multiple exposures of same target?
 		do_cache=True if args.do_cache else False,		# save and load individual rest-frame files
 	).run()
 

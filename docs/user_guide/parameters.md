@@ -29,6 +29,7 @@ This page documents inputs for:
 | `--nthreads` | `nthreads` | CPU threads for shifting/stacking pipeline | `10` (CLI), `1` (Python) |
 | `--ene_trc` | `ene_trc` | Truncate unreliable low-energy ARF/PI bins below threshold | `0.0` / `None` |
 | `--extended` | `extended` | Treat sample as extended sources | `False` |
+| `--same_target` | `same_target` | Stack multiple exposures of one target in observed frame (skip rest-frame/NH/background pre-scaling; use FLX response weighting) | `False` |
 | `--do_cache` | `do_cache` | Save/reuse per-source rest-frame cache files (`.rf*`) | `False` |
 
 ## Data And Background Parameters
@@ -69,3 +70,12 @@ For non-bootstrap runs, Xstack writes:
 - `<prefix>runXstack.log`
 
 In bootstrap mode, each realization gets an index in the output names.
+
+## Same-target Mode Notes
+
+When `same_target=True`:
+
+- `rspwt_method` is effectively forced to `FLX`,
+- `do_cache` is ignored,
+- output src/bkg `AREASCAL`, `BACKSCAL`, `CORRSCAL` are means of input values,
+- a log warning is raised if `var(x/mean(x))` is large for these scale keywords.

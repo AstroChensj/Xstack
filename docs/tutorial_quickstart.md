@@ -54,6 +54,26 @@ runXstack your_filelist.txt \
   --bootstrap_portion 1.0
 ```
 
+### Same-target Multi-exposure Example
+
+If your input list contains multiple exposures of one target (not multiple targets), run:
+
+```bash
+runXstack your_filelist.txt \
+  --prefix ./results/stacked_ \
+  --same_target
+```
+
+Behavior in `same_target` mode:
+
+- no rest-frame shifting,
+- no Galactic NH correction,
+- no source-to-background pre-scaling before PI stacking,
+- direct source/background PI summation (integer output),
+- full-response stacking with `FLX` weighting,
+- stacked `EXPOSURE` is summed,
+- stacked src/bkg `AREASCAL`, `BACKSCAL`, `CORRSCAL` are input means (with log warning if scaled variance is large).
+
 ## 3. Python Module Workflow
 
 ```python
@@ -80,6 +100,7 @@ runner = XstackRunner(
     nthreads=20,
     bootstrap=False,
     prefix="./results/stacked_",
+    same_target=False,
     do_cache=False,
 )
 runner.run()
@@ -94,4 +115,3 @@ After stacking:
 - fit in XSPEC (recommended statistic: PG-stat for Poisson source + Gaussian background treatment).
 
 See also `demo/demo.ipynb` and `demo/xspec_sh/*`.
-
