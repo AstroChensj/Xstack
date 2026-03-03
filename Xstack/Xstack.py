@@ -370,6 +370,7 @@ class XstackRunner:
         This is the default mode, and is recommended when you are stacking 
         different sources at different redshifts.
         """
+        self.main_logger.info("")
         self.main_logger.info("**************** STANDARD MODE ACTIVE *****************")
         self.main_logger.info("Will do rest-frame shifting for each source, and then do stacking.")
         self.main_logger.info("Background spectra are scaled to corresponding source region size. Complete treatment of full response.")
