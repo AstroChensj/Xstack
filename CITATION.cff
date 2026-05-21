@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+title: "Xstack: An X-ray Spectral Shifting and Stacking Code."
+message: "If you use Xstack, please cite both the accompanying A&A paper and the corresponding Zenodo software release."
+type: software
+
+authors:
+  - family-names: "Chen"
+    given-names: "Shi-Jiang"
+    affiliation: "University of Science and Technology of China"
+    orcid: "0009-0004-9950-9807"
+
+repository-code: "https://github.com/AstroChensj/Xstack"
+url: "https://github.com/AstroChensj/Xstack"
+
+doi: "10.5281/zenodo.20327464"
+
+license: "MIT"
+
+keywords:
+  - X-ray astronomy
+  - AGN
+  - spectral stacking
+  - eROSITA
+  - survey astronomy
+
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Chen"
+      given-names: "Shi-Jiang"
+    - family-names: "Buchner"
+      given-names: "Johannes"
+    - family-names: "Liu"
+      given-names: "Teng"
+  doi: "10.1051/0004-6361/202554737"
+  journal: "Astronomy & Astrophysics"
+  title: "The average soft X-ray spectra of eROSITA active galactic nuclei"
+  volume: 701
+  year: 2025
+  start: "A144"
