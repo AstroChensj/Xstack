@@ -30,7 +30,7 @@ To tackle these issues, we develop **<span style="font-family: 'Courier New', Co
 
 :star_struck: support Galactic absorption correction, if an additional ***nH*** value (in units of 1 $\text{cm}^{-2}$) for each spectrum is given.
 
-You can find in the appendix of [S. Chen, J. Bucher, T. Liu, et al., 2025, A&A, 701, A144 (2025)](https://ui.adsabs.harvard.edu/abs/2025A%26A...701A.144C/exportcitation) more technical details!
+You can find in the appendix of [S. Chen, J. Buchner, T. Liu, et al., 2025, A&A, 701, A144 (2025)](https://ui.adsabs.harvard.edu/abs/2025A%26A...701A.144C/exportcitation) more technical details!
 
 
 ## :wrench: Prerequisites and Installation
