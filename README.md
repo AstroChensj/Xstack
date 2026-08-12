@@ -1,3 +1,5 @@
+
+
 # Xstack: X-ray Spectral Stacking
 
 :checkered_flag: **If you are in a hurry, please jump to [this link](#wrench-prerequisites-and-installation) for installation, and [this link](#ledger-how-to-use-xstack) for basic usage of this code. [Demo notebook](https://nbviewer.org/github/AstroChensj/Xstack/blob/main/demo/demo.ipynb) gives you a quick walk-through of <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span>.**
@@ -122,7 +124,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
 - Or more sophisticatedly, specify more parameters:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf
   ```
 
   -  `nthreads` specifies the number of CPUs used for shifting RMF.
@@ -136,7 +138,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
 - If you want to do bootstrap, that is also easy:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
   ```
 
 - If your `filelist` contains multiple exposures of the **same target**, use `same_target` mode:
@@ -159,7 +161,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
   |`filelist`|text file containing the file names|--|
   |`--prefix`|prefix for output stacked PI, BKGPI, ARF, and RMF files|`./results/stacked_`|
   |`--rsp_weight_method`|method to calculate RSP weighting factor for each source; 'SHP': assuming all sources have same spectral shape, 'FLX': assuming all sources have same shape and energy flux (weigh by exposure time), 'LMN': assuming all sources have same shape and luminosity (weigh by exposure/dist^2)|`SHP`|
-  |`--rsp_proj_gamma`|prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).|2.0|
+  |`--rsp_project_gamma`|prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).|2.0|
   |`--flux_energy_lo`|lower end of the energy range in keV for computing flux|1.0|
   |`--flux_energy_hi`|upper end of the energy range in keV for computing flux|2.3|
   |`--nthreads`|number of cpus used for non-parametric response shifting|10|
