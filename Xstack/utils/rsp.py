@@ -1077,7 +1077,7 @@ def get_tlmin_from_header(rmf_fname):
 	mat_hdr = fits.getheader(rmf_fname,extname="MATRIX")
 	f_chan_0 = [mat_hdr[k] for k in mat_hdr if k.startswith("TLMIN")]
 	if len(f_chan_0) > 0:
-		f_chan_0 = f_chan_0[0]
+		f_chan_0 = int(f_chan_0[0])
 	else:
 		f_chan_0 = 1
 
