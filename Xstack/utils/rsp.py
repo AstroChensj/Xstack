@@ -444,10 +444,13 @@ def shift_matrix(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
 			f"{expected_shape}"
 		)
 
+	# Keep an explicit identity-scale path, but still apply the legacy overlap
+	# normalization below: on real response grids it is not always bitwise
+	# equivalent to returning ``prob.copy()``.
 	if z == 0:
-		return prob.astype(np.float64).copy()
-
-	scale = 1.0 + z
+		scale = 1.0
+	else:
+		scale = 1.0 + z
 
 	# ------------------------------------------------------------
 	# Step 1: shift the output-channel-energy direction.
