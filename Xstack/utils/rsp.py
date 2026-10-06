@@ -196,9 +196,14 @@ def shift_rsp(
 
 
 @jit
-def shift_matrix(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
+def shift_matrix_reference(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
 	"""
-	Numba code for Non-parametric RSP/RMF shifting.
+	Older, slower, but easier-to-understand reference implementation of
+	:func:`shift_matrix`.
+
+	This function retains the original nested-loop algorithm for scientific
+	verification, regression testing, and performance comparisons. Production
+	Xstack processing uses :func:`shift_matrix`.
 
 	Parameters
 	----------
@@ -298,6 +303,212 @@ def shift_matrix(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
 		prob_sft_vertical[i] = np.sum(prob_sft_horizontal_mask*prob_mask[:,np.newaxis],axis=0)
 
 	return prob_sft_vertical
+
+
+@jit
+def _build_overlap_map(
+		query_lo,query_hi,grid_lo,grid_hi,query_scale=1.0,grid_scale=1.0,
+		include_touching=False,float32_widths=False,
+):
+	"""
+	Find how each query interval overlaps a target energy grid.
+
+	Parameters
+	----------
+	query_lo : numpy.ndarray
+		Lower edges of intervals that need to be mapped.
+	query_hi : numpy.ndarray
+		Upper edges of intervals that need to be mapped.
+	grid_lo : numpy.ndarray
+		Lower edges of the destination grid.
+	grid_hi : numpy.ndarray
+		Upper edges of the destination grid.
+	query_scale : float, optional
+		Scale applied to each query boundary.
+	grid_scale : float, optional
+		Scale applied to each destination-grid boundary.
+	include_touching : bool, optional
+		Include bins whose boundaries only touch. This reproduces the inclusive
+		comparison used by the reference implementation's vertical shift.
+	float32_widths : bool, optional
+		Calculate overlap widths in float32. The horizontal part of the
+		reference implementation does this because its channel widths inherit
+		the energy-grid dtype.
+
+	Returns
+	-------
+	offsets : numpy.ndarray
+		Offsets into ``indices`` and ``weights`` for each query interval.
+	indices : numpy.ndarray
+		Destination-bin indices, stored in increasing accumulation order.
+	weights : numpy.ndarray
+		Normalized overlap weights corresponding to ``indices``.
+	"""
+	scaled_grid_lo = grid_lo * grid_scale
+	scaled_grid_hi = grid_hi * grid_scale
+	grid_ubound = np.max(scaled_grid_lo)
+	grid_lbound = np.min(scaled_grid_hi)
+
+	starts = np.empty(len(query_lo),dtype=np.int64)
+	stops = np.empty(len(query_lo),dtype=np.int64)
+	offsets = np.zeros(len(query_lo)+1,dtype=np.int64)
+	for i in range(len(query_lo)):
+		lo = query_lo[i] * query_scale
+		hi = query_hi[i] * query_scale
+		if not include_touching and (lo > grid_ubound or hi < grid_lbound):
+			first = 0
+			last = 0
+		elif include_touching:
+			first = np.searchsorted(scaled_grid_hi,lo,side="left")
+			last = np.searchsorted(scaled_grid_lo,hi,side="right")
+		else:
+			first = np.searchsorted(scaled_grid_hi,lo,side="right")
+			last = np.searchsorted(scaled_grid_lo,hi,side="left")
+		starts[i] = first
+		stops[i] = last
+		offsets[i+1] = offsets[i] + max(0,last-first)
+
+	indices = np.empty(offsets[-1],dtype=np.int64)
+	weights = np.empty(offsets[-1],dtype=np.float64)
+	for i in range(len(query_lo)):
+		first = starts[i]
+		last = stops[i]
+		count = last-first
+		if count <= 0:
+			continue
+
+		lo = query_lo[i] * query_scale
+		hi = query_hi[i] * query_scale
+		start = offsets[i]
+		if float32_widths:
+			# Preserve the reference code's float32 channel-width arithmetic.
+			widths32 = np.empty(count,dtype=np.float32)
+			for j in range(count):
+				index = first+j
+				indices[start+j] = index
+				widths32[j] = grid_hi[index]-grid_lo[index]
+			widths32[0] = scaled_grid_hi[first]-lo
+			widths32[-1] = hi-scaled_grid_lo[last-1]
+			normalized32 = widths32/np.sum(widths32)
+			for j in range(count):
+				weights[start+j] = normalized32[j]
+		else:
+			widths64 = np.empty(count,dtype=np.float64)
+			for j in range(count):
+				index = first+j
+				indices[start+j] = index
+				widths64[j] = (grid_hi[index]-grid_lo[index])*grid_scale
+			widths64[0] = scaled_grid_hi[first]-lo
+			widths64[-1] = hi-scaled_grid_lo[last-1]
+			normalized64 = widths64/np.sum(widths64)
+			for j in range(count):
+				weights[start+j] = normalized64[j]
+
+	return offsets,indices,weights
+
+
+@jit
+def shift_matrix(prob,iene_lo,iene_hi,ene_lo,ene_hi,z):
+	"""
+	Shift an RMF probability matrix or full response matrix to the rest frame.
+
+	The transformation shifts the output channel-energy direction followed by
+	the input model-energy direction. Bin-overlap mappings are calculated once
+	and then applied to the complete response matrix.
+
+	Parameters
+	----------
+	prob : numpy.ndarray
+		Input RMF probability matrix or full ARF*RMF response matrix. Shape
+		must be ``(len(iene_lo), len(ene_lo))``.
+	iene_lo : numpy.ndarray
+		Lower edges of the input model-energy bins.
+	iene_hi : numpy.ndarray
+		Upper edges of the input model-energy bins.
+	ene_lo : numpy.ndarray
+		Lower edges of the output channel-energy bins.
+	ene_hi : numpy.ndarray
+		Upper edges of the output channel-energy bins.
+	z : float
+		Source redshift. Energy boundaries are multiplied by ``1 + z``.
+
+	Returns
+	-------
+	shifted : numpy.ndarray
+		Rest-frame shifted response matrix with the same shape as ``prob``.
+	"""
+	expected_shape = (len(iene_lo),len(ene_lo))
+	if prob.shape != expected_shape:
+		raise ValueError(
+			f"Response shape {prob.shape} does not match energy grids "
+			f"{expected_shape}"
+		)
+
+	if z == 0:
+		return prob.astype(np.float64).copy()
+
+	scale = 1.0 + z
+
+	# ------------------------------------------------------------
+	# Step 1: shift the output-channel-energy direction.
+	#
+	# channel_map[j] describes where observed channel j lands after
+	# multiplying its energy boundaries by (1 + z).
+	# ------------------------------------------------------------
+	channel_offsets,channel_indices,channel_weights = _build_overlap_map(
+		ene_lo,ene_hi,ene_lo,ene_hi,scale,1.0,False,True,
+	)
+
+	horizontal = np.zeros(prob.shape,dtype=np.float64)
+	model_ubound = np.max(iene_lo)
+	model_lbound = np.min(iene_hi)
+	for model_row in range(len(iene_lo)):
+		model_lo = iene_lo[model_row]*scale
+		model_hi = iene_hi[model_row]*scale
+		if model_lo > model_ubound:
+			break
+		if model_hi < model_lbound:
+			continue
+
+		prob_1d = np.zeros(len(ene_lo),dtype=np.float64)
+		for old_channel in range(len(ene_lo)):
+			start = channel_offsets[old_channel]
+			stop = channel_offsets[old_channel+1]
+			for position in range(start,stop):
+				new_channel = channel_indices[position]
+				prob_1d[new_channel] += (
+					prob[model_row][old_channel]*channel_weights[position]
+				)
+
+		# to deal with the high energy tail; we want to make sure that the
+		# sum along horizontal axis equals to arf specresp in the energy
+		if np.sum(prob_1d) > 0:
+			prob_1d *= np.sum(prob[model_row])/np.sum(prob_1d)
+		horizontal[model_row] = prob_1d
+
+	# ------------------------------------------------------------
+	# Step 2: shift the input-model-energy direction.
+	#
+	# model_map[i] describes which redshifted input model-energy rows
+	# contribute to rest-frame model-energy row i.
+	# ------------------------------------------------------------
+	model_offsets,model_indices,model_weights = _build_overlap_map(
+		iene_lo,iene_hi,iene_lo,iene_hi,1.0,scale,True,False,
+	)
+
+	shifted = np.zeros(prob.shape,dtype=np.float64)
+	for new_row in range(len(iene_lo)):
+		start = model_offsets[new_row]
+		stop = model_offsets[new_row+1]
+		if start == stop:
+			continue
+		old_rows = model_indices[start:stop]
+		weights = model_weights[start:stop]
+		shifted[new_row] = np.sum(
+			horizontal[old_rows].copy()*weights[:,np.newaxis],axis=0,
+		)
+
+	return shifted
 
 
 def compute_rspwt(
