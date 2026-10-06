@@ -63,7 +63,14 @@ def main():
         action="store_true",
         help="Compile and run once before the measured call.",
     )
+    parser.add_argument(
+        "--measure-cold-and-warm",
+        action="store_true",
+        help="Time the first and second calls separately in this process.",
+    )
     args = parser.parse_args()
+    if args.warmup and args.measure_cold_and_warm:
+        parser.error("--warmup and --measure-cold-and-warm are mutually exclusive")
 
     response = _load_response(args.arf, args.rmf)
     function = (
@@ -71,7 +78,12 @@ def main():
         if args.implementation == "reference"
         else shift_matrix
     )
-    if args.warmup:
+    cold_elapsed = None
+    if args.measure_cold_and_warm:
+        started = time.perf_counter()
+        shifted = function(*response, args.redshift)
+        cold_elapsed = time.perf_counter() - started
+    elif args.warmup:
         function(*response, args.redshift)
 
     started = time.perf_counter()
@@ -84,6 +96,7 @@ def main():
             {
                 "implementation": args.implementation,
                 "warmup": args.warmup,
+                "cold_elapsed_seconds": cold_elapsed,
                 "redshift": args.redshift,
                 "shape": list(shifted.shape),
                 "dtype": str(shifted.dtype),
