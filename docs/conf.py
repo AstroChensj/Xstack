@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(".."))
 
 project = "Xstack"
 author = "Shi-Jiang Chen, Johannes Buchner, Teng Liu"
-release = "1.1.2"
+release = "1.1.5"
 
 extensions = [
     "myst_parser",

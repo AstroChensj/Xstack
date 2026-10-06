@@ -4,8 +4,8 @@ Configuration files for Xstack.
 """
 import os
 
-VERSION = "1.1.3"
-LASTUPDATE = "2026/3/3"
+VERSION = "1.1.5"
+LASTUPDATE = "2026/10/06"
 WEB = "https://github.com/AstroChensj/Xstack"
 
 

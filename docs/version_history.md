@@ -1,10 +1,24 @@
 # Version History
 
-new features for v1.1.3:
+## v1.1.5 (latest)
+
+- Corrected Johannes Buchner's name in the README.
+- Fixed NuSTAR response handling when the OGIP `TLMIN` channel keyword is
+  stored as a string rather than an integer.
+- Significantly accelerated response-matrix shifting while preserving
+  bit-for-bit scientific results. Tests with real NuSTAR matrices also show a
+  moderate reduction in peak RSS.
+- Retained the previous shifting algorithm as the slower, easier-to-understand
+  `shift_matrix_reference` implementation for verification and benchmarking.
+
+## v1.1.3–v1.1.4
+
+- Uploaded Xstack to Zenodo with software citation information. Version 1.1.4
+  added the standard `CITATION.cff` metadata file.
 - Added `same_target` mode for stacking multiple exposures of one target in observed frame.
 - Stacked FITS outputs now record command provenance in header `HISTORY` cards.
 
-## v1.1.2 (latest)
+## v1.1.2
 
 - Major performance refactor for on-the-fly stacking, reducing peak RAM and total runtime.
 - Significant bootstrap speedup (bootstrap runtime now close to a single-stack run in typical use).

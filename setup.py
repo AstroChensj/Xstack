@@ -3,7 +3,7 @@ from setuptools.command.build_py import build_py as _build_py
 
 setup(
     name="Xstack",
-    version="1.1.2",
+    version="1.1.5",
     description="An X-ray Spectral Shifting and Stacking Code",
     author="Shi-Jiang Chen, Johannes Buchner and Teng Liu",
     author_email="JohnnyCsj666@gmail.com",
