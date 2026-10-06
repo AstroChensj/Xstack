@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -61,7 +62,10 @@ def _compare_header(left, right, label, differences):
             if keyword in VOLATILE_HEADERS or keyword == "":
                 continue
             if keyword == "HISTORY":
-                if str(card.value).startswith("CMD:"):
+                history = str(card.value)
+                if re.match(r"^\d{4}-\d{2}-\d{2}T.*: .*created by", history):
+                    continue
+                if history.startswith("CMD:"):
                     command_history = True
                 if command_history:
                     continue
