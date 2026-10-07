@@ -816,11 +816,20 @@ def rescale_rspmat(
 				norm_scale *= 1e60
 			norm_rspmat *= norm_scale
 
+			# Anchor the matrices as they will actually appear in the output
+			# ARF+RMF. extract_arf_rmf_from_rspmat applies Xstack's RMF
+			# probability threshold and row renormalization, which can otherwise
+			# introduce a small mismatch between the in-memory full response and
+			# the response reconstructed from the written FITS files.
+			shp_specresp,shp_prob = extract_arf_rmf_from_rspmat(rspmat)
+			norm_specresp,norm_prob = extract_arf_rmf_from_rspmat(norm_rspmat)
 			shp_rate = get_folded_model_rate(
-				rspmat,ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
+				shp_prob * shp_specresp[:,np.newaxis],
+				ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
 			)
 			norm_rate = get_folded_model_rate(
-				norm_rspmat,ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
+				norm_prob * norm_specresp[:,np.newaxis],
+				ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
 			)
 			shp_renorm = norm_rate / shp_rate
 			if not np.isfinite(shp_renorm) or shp_renorm <= 0:
