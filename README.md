@@ -28,7 +28,9 @@ To tackle these issues, we develop **<span style="font-family: 'Courier New', Co
 
 :star_struck: preserve Poisson statistics; 
 
-:star_struck: support Galactic absorption correction, if an additional ***nH*** value (in units of 1 $\text{cm}^{-2}$) for each spectrum is given.
+:star_struck: support Galactic absorption correction, if an additional ***nH*** value (in units of 1 $\text{cm}^{-2}$) for each spectrum is given;
+
+:star_struck: optionally give an SHP-shaped response a physical flux or luminosity normalization, while retaining SHP's data-driven spectral shape.
 
 You can find in the appendix of [S. Chen, J. Buchner, T. Liu, et al., 2025, A&A, 701, A144 (2025)](https://ui.adsabs.harvard.edu/abs/2025A%26A...701A.144C/exportcitation) more technical details!
 
@@ -122,7 +124,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
 - Or more sophisticatedly, specify more parameters:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf
   ```
 
   -  `nthreads` specifies the number of CPUs used for shifting RMF.
@@ -133,10 +135,40 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
 
   - `same_rmf` : the RMF files are usually large, and sometimes all sources to be stacked could share the same RMF in order to save space. Under this case, you can specify the file name of the common RMF with `same_rmf`.
 
+#### Giving an SHP response a physical normalization
+
+`SHP` determines the stacked response shape from the observed source counts. By default, Xstack retains its historical arbitrary response scale:
+
+```shell
+runXstack your_filelist.txt --prefix ./results/stacked_ \
+  --rsp_weight_method SHP --shp_normalization LEGACY
+```
+
+You can instead keep exactly the same SHP response shape while anchoring its absolute scale to the corresponding `FLX` or `LMN` stack:
+
+```shell
+# A cflux result is interpreted as rest-frame flux in erg cm^-2 s^-1.
+runXstack your_filelist.txt --prefix ./results/shp_flx_ \
+  --rsp_weight_method SHP --shp_normalization FLX \
+  --flux_energy_lo 1.0 --flux_energy_hi 2.3 \
+  --rsp_project_gamma 2.0
+
+# Multiply the cflux result and its uncertainties by 1e60 to obtain
+# rest-frame luminosity in erg s^-1.
+runXstack your_filelist.txt --prefix ./results/shp_lmn_ \
+  --rsp_weight_method SHP --shp_normalization LMN \
+  --flux_energy_lo 1.0 --flux_energy_hi 2.3 \
+  --rsp_project_gamma 2.0
+```
+
+The anchoring is exact for the selected rest-frame energy band and reference power-law photon index. It changes the response by one global positive factor; the PI and background spectra, response energy grids, RMF shape, and SHP spectral shape remain unchanged. `--shp_normalization` is ignored for ordinary `FLX`/`LMN` weighting and in `same_target` mode.
+
+The output ARF records the choice and normalization details in `SHPNORM`, `SHPRENOR`, `NORMELO`, `NORMEHI`, and `NORMGAM`. An SHP/LMN ARF additionally records `LMNSCALE=1e60`.
+
 - If you want to do bootstrap, that is also easy:
 
   ```shell
-  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_proj_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
+  runXstack your_filelist.txt --prefix ./results/stacked_ --rsp_weight_method SHP --rsp_project_gamma 2.0 --flux_energy_lo 1.0 --flux_energy_hi 2.3 --nthreads 20 --ene_trc 0.2 --extended --same_rmf AllSourcesUseSameRMF.rmf --bootstrap --num_bootstrap 100
   ```
 
 - If your `filelist` contains multiple exposures of the **same target**, use `same_target` mode:
@@ -159,7 +191,8 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
   |`filelist`|text file containing the file names|--|
   |`--prefix`|prefix for output stacked PI, BKGPI, ARF, and RMF files|`./results/stacked_`|
   |`--rsp_weight_method`|method to calculate RSP weighting factor for each source; 'SHP': assuming all sources have same spectral shape, 'FLX': assuming all sources have same shape and energy flux (weigh by exposure time), 'LMN': assuming all sources have same shape and luminosity (weigh by exposure/dist^2)|`SHP`|
-  |`--rsp_proj_gamma`|prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the `SHP` method, to calculate the weight of each response. Defaults to 2.0 (typical for AGN).|2.0|
+  |`--shp_normalization`|absolute normalization of an SHP-shaped response: `LEGACY`, `FLX`, or `LMN`; ignored outside standard-mode SHP weighting|`LEGACY`|
+  |`--rsp_project_gamma`|prior photon index value for projecting RSP matrix onto the output energy channel and anchoring physical SHP normalization. Defaults to 2.0 (typical for AGN).|2.0|
   |`--flux_energy_lo`|lower end of the energy range in keV for computing flux|1.0|
   |`--flux_energy_hi`|upper end of the energy range in keV for computing flux|2.3|
   |`--nthreads`|number of cpus used for non-parametric response shifting|10|
@@ -198,6 +231,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
       bkgpifile_lst=bkgpifile_lst,                    # bkg PI file list
       nh_lst=nh_lst,                                  # nh list
       rspwt_method="SHP",                             # method to calculate response weighting factor for each source (recommended: SHP)
+      shp_normalization="FLX",                       # LEGACY, FLX, or LMN absolute scale for an SHP response
       rspproj_gamma=2.0,                              # prior photon index for projecting RSP matrix onto the output energy channel.
       int_rng=(1.0,2.3),                              # if `rspwt_method`=`SHP`, choose the range to calculate flux
       nh_file=default_nh_file,                        # the Galactic absorption profile (absorption factor vs. energy)
@@ -235,6 +269,7 @@ All stacked FITS outputs also include command provenance in `HISTORY` cards, sto
       bkgpifile_lst=bkgpifile_lst,                    # bkg PI file list
       nh_lst=nh_lst,                                  # nh list
       rspwt_method="SHP",                             # method to calculate ARF weighting factor for each source (recommended: SHP)
+      shp_normalization="LEGACY",                    # LEGACY, FLX, or LMN absolute scale for an SHP response
       rspproj_gamma=2.0,                              # prior photon index for projecting RSP matrix onto the output energy channel.
       int_rng=(1.0,2.3),                              # if `rspwt_method`=`SHP`, choose the range to calculate flux
       nh_file=default_nh_file,                        # the Galactic absorption profile (absorption factor vs. energy)
@@ -270,8 +305,8 @@ Please take a look at the `Step 3` of primary example in [`./demo/demo.ipynb`](h
 
 <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is a great tool for stacking large number of low-counts X-ray spectra, especially when focusing on average spectral shapes. While we acknowledge a few limitations, they are beyond current scope and won't affect the core functionality of the code. That said, contributions are still welcome!
 
-- **Preserving only spectral **shape**; **normalization** information is lost**
-  - Each spectrum carries both **normalization** and **shape** information. For **X-ray** spectral stacking, it is in principle not possible to preserve both simultaneously, due to the complex response. <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> is designed to preserve the **shape** (by assigning optimized response weighting factors), which necessarily results in the loss of **absolute normalization**. One possible improvement could be to stack the shape (with <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span>) and normalization (with e.g., 1.0-2.3 keV image stacking) separately, and then rescale the shape spectrum using the average luminosity/flux computed independently.
+- **Spectral shape and normalization cannot both be preserved without an assumption**
+  - Each spectrum carries both **normalization** and **shape** information. With a complex X-ray response, no single stack can preserve both exactly for an arbitrary source population. `SHP/LEGACY` makes the minimum shape assumption and leaves the absolute scale arbitrary. `SHP/FLX` and `SHP/LMN` retain the SHP shape but anchor its global response scale to the corresponding flux- or luminosity-weighted stack for a specified energy band and reference photon index. The physical normalization is therefore meaningful at that anchor, but it should not be interpreted as simultaneously preserving every source's shape and normalization.
 
 - **You can only stack spectra from one instrument for now**
   - <span style="font-family: 'Courier New', Courier, monospace; font-weight: 700;">Xstack</span> assumes all spectra to be stacked share the same energy grids (from RMF). This means that you can only stack spectra from only one instrument (eROSITA or XMM or Chandra or EP...), as different instruments generally have different energy grid settings. Potential improvement could focus on creating a common energy grid for all spectra before shifting and stacking.
