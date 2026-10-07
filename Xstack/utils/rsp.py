@@ -674,10 +674,14 @@ def get_folded_model_rate(
 		Reference-model count rate in the selected output-channel band.
 	"""
 	rspmat = np.asarray(rspmat,dtype=np.float64)
-	ene_lo = np.asarray(ene_lo)
-	ene_hi = np.asarray(ene_hi)
-	iene_lo = np.asarray(iene_lo)
-	iene_hi = np.asarray(iene_hi)
+	# FITS response grids are commonly float32 in input files, while Xstack
+	# writes the stacked grids as float64. Always do the center/width
+	# arithmetic in float64 so an in-memory response and the same response
+	# read back from the output FITS file fold identically.
+	ene_lo = np.asarray(ene_lo,dtype=np.float64)
+	ene_hi = np.asarray(ene_hi,dtype=np.float64)
+	iene_lo = np.asarray(iene_lo,dtype=np.float64)
+	iene_hi = np.asarray(iene_hi,dtype=np.float64)
 	flg = np.asarray(flg,dtype=bool)
 
 	if ene_lo.shape != ene_hi.shape:
@@ -768,9 +772,6 @@ def rescale_rspmat(
 	shp_renorm : float
 		Additional FLX/LMN normalization applied to an SHP response. This is
 		``1.0`` for legacy SHP and ordinary FLX/LMN operation.
-	norm_rate : float or None
-		Folded reference-model rate of the auxiliary FLX/LMN response. Used
-		to remove final output-representation rounding in the caller.
 	"""
 	rspwt_method = str(rspwt_method).upper()
 	shp_normalization = str(shp_normalization).upper()
@@ -778,7 +779,6 @@ def rescale_rspmat(
 	expo_lst = np.asarray(expo_lst,dtype=np.float64)
 	rega_lst = np.asarray(rega_lst,dtype=np.float64)
 	shp_renorm = 1.0
-	norm_rate = None
 
 	# FLX and LMN share the same exposure/area rescaling. LMN introduces
 	# the additional factor of 1e60 below.
@@ -870,7 +870,7 @@ def rescale_rspmat(
 		)
 
 	rspwt_lst *= final_scale
-	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk,shp_renorm,norm_rate
+	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk,shp_renorm
 
 
 def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):

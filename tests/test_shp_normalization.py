@@ -61,6 +61,25 @@ def test_get_folded_model_rate_matches_direct_calculation():
     assert actual == expected
 
 
+def test_get_folded_model_rate_is_independent_of_fits_grid_precision():
+    ene_lo32 = np.array([0.20000000298023224, 0.30000001192092896, 0.4], dtype=np.float32)
+    ene_hi32 = np.array([0.30000001192092896, 0.4, 0.5], dtype=np.float32)
+    iene_lo32 = np.array([0.20000000298023224, 0.3499999940395355], dtype=np.float32)
+    iene_hi32 = np.array([0.3499999940395355, 0.5], dtype=np.float32)
+    flag = np.array([True, True, False])
+
+    rate_from_input_grid = get_folded_model_rate(
+        SHP_RAW, ene_lo32, ene_hi32, iene_lo32, iene_hi32, flag,
+    )
+    rate_from_written_grid = get_folded_model_rate(
+        SHP_RAW,
+        ene_lo32.astype(np.float64), ene_hi32.astype(np.float64),
+        iene_lo32.astype(np.float64), iene_hi32.astype(np.float64), flag,
+    )
+
+    assert rate_from_input_grid == rate_from_written_grid
+
+
 def test_legacy_shp_is_bitwise_identical_to_old_formula():
     expected_rsp = SHP_RAW.copy()
     expected_weights = SHP_WEIGHTS.copy()
@@ -68,7 +87,7 @@ def test_legacy_shp_is_bitwise_identical_to_old_formula():
     expected_rsp *= expected_norm
     expected_weights *= expected_norm
 
-    rsp, rspnorm, weights, expo, rega, shp_renorm, norm_rate = _rescale_shp("LEGACY")
+    rsp, rspnorm, weights, expo, rega, shp_renorm = _rescale_shp("LEGACY")
 
     assert np.array_equal(rsp, expected_rsp)
     assert np.array_equal(weights, expected_weights)
@@ -76,13 +95,12 @@ def test_legacy_shp_is_bitwise_identical_to_old_formula():
     assert expo == np.sum(EXPOSURES)
     assert rega == 1.0
     assert shp_renorm == 1.0
-    assert norm_rate is None
 
 
 def test_shp_flx_preserves_shape_and_matches_flx_folded_rate():
     legacy_rsp, *_ = _rescale_shp("LEGACY")
-    shp_flx_rsp, _, _, expo, rega, renorm, _ = _rescale_shp("FLX", FLX_RAW)
-    flx_rsp, _, _, flx_expo, flx_rega, _, _ = rescale_rspmat(
+    shp_flx_rsp, _, _, expo, rega, renorm = _rescale_shp("FLX", FLX_RAW)
+    flx_rsp, _, _, flx_expo, flx_rega, _ = rescale_rspmat(
         FLX_RAW.copy(), np.array([10.0, 30.0]), EXPOSURES, REGAREAS, "FLX",
     )
 
@@ -103,8 +121,8 @@ def test_shp_flx_preserves_shape_and_matches_flx_folded_rate():
 
 
 def test_shp_lmn_matches_lmn_rate_and_keeps_1e60_convention():
-    shp_lmn_rsp, _, _, expo, rega, renorm, _ = _rescale_shp("LMN", LMN_RAW)
-    lmn_rsp, rspnorm, _, lmn_expo, lmn_rega, _, _ = rescale_rspmat(
+    shp_lmn_rsp, _, _, expo, rega, renorm = _rescale_shp("LMN", LMN_RAW)
+    lmn_rsp, rspnorm, _, lmn_expo, lmn_rega, _ = rescale_rspmat(
         LMN_RAW.copy(), np.array([1e-55, 2e-55]),
         EXPOSURES, REGAREAS, "LMN",
     )
@@ -130,5 +148,4 @@ def test_shp_normalization_is_ignored_for_ordinary_flx():
     expected = FLX_RAW.copy()
     expected *= 1.0 / np.sum(EXPOSURES)
     assert np.array_equal(result[0], expected)
-    assert result[-2] == 1.0
-    assert result[-1] is None
+    assert result[-1] == 1.0
