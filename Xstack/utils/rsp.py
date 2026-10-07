@@ -836,6 +836,24 @@ def rescale_rspmat(
 				raise ValueError("Invalid SHP normalization factor.")
 
 			rspmat *= shp_renorm
+			# Multiplying the full matrix can move the final extracted RMF by a
+			# few floating-point rounding units. Refine the scalar against the
+			# final ARF+RMF representation so its folded rate meets the physical
+			# target rather than merely the pre-scaled full-matrix target.
+			for _ in range(3):
+				final_specresp,final_prob = extract_arf_rmf_from_rspmat(rspmat)
+				final_rate = get_folded_model_rate(
+					final_prob * final_specresp[:,np.newaxis],
+					ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
+				)
+				if np.isclose(final_rate,norm_rate,rtol=1e-14,atol=0.0):
+					break
+				correction = norm_rate / final_rate
+				if not np.isfinite(correction) or correction <= 0:
+					raise ValueError("Invalid SHP normalization refinement factor.")
+				rspmat *= correction
+				shp_renorm *= correction
+
 			final_scale = shp_scale * shp_renorm
 			rspnorm = final_scale
 			expo_stk = physical_expo_stk
