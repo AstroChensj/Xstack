@@ -645,7 +645,80 @@ def compute_rspwt(
 	return rspwt
 
 
-def rescale_rspmat(rspmat,rspwt_lst,expo_lst,rega_lst,rspwt_method,extended=False):
+def get_folded_model_rate(
+		rspmat,ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=2.0,
+	):
+	"""
+	Fold a reference power law through a full response matrix.
+
+	The absolute normalization of the reference power law is arbitrary and
+	cancels when rates from two response matrices are divided.
+
+	Parameters
+	----------
+	rspmat : numpy.ndarray
+		Full response matrix. Axis 0 is input model energy and axis 1 is
+		output-channel energy.
+	ene_lo, ene_hi : numpy.ndarray
+		Lower and upper edges of output-channel energy bins.
+	iene_lo, iene_hi : numpy.ndarray
+		Lower and upper edges of input model-energy bins.
+	flg : numpy.ndarray
+		Boolean selection of output channels used for normalization.
+	gamma : float, optional
+		Photon index of the reference power law. Defaults to ``2.0``.
+
+	Returns
+	-------
+	rate : float
+		Reference-model count rate in the selected output-channel band.
+	"""
+	rspmat = np.asarray(rspmat,dtype=np.float64)
+	# FITS response grids are commonly float32 in input files, while Xstack
+	# writes the stacked grids as float64. Always do the center/width
+	# arithmetic in float64 so an in-memory response and the same response
+	# read back from the output FITS file fold identically.
+	ene_lo = np.asarray(ene_lo,dtype=np.float64)
+	ene_hi = np.asarray(ene_hi,dtype=np.float64)
+	iene_lo = np.asarray(iene_lo,dtype=np.float64)
+	iene_hi = np.asarray(iene_hi,dtype=np.float64)
+	flg = np.asarray(flg,dtype=bool)
+
+	if ene_lo.shape != ene_hi.shape:
+		raise ValueError("ene_lo and ene_hi must have identical shapes.")
+	if iene_lo.shape != iene_hi.shape:
+		raise ValueError("iene_lo and iene_hi must have identical shapes.")
+	if rspmat.shape != (len(iene_lo),len(ene_lo)):
+		raise ValueError(
+			f"rspmat has shape {rspmat.shape}; expected "
+			f"{(len(iene_lo),len(ene_lo))}."
+		)
+	if flg.shape != ene_lo.shape:
+		raise ValueError("flg must have one element per output channel.")
+	if not np.any(flg):
+		raise ValueError("No output channels were selected for normalization.")
+
+	iene_ce = (iene_lo + iene_hi) / 2
+	iene_wd = iene_hi - iene_lo
+	model = iene_ce**(-gamma)
+	folded = np.sum(
+		rspmat * model[:,np.newaxis] * iene_wd[:,np.newaxis],axis=0,
+	)
+	rate = np.sum(folded[flg])
+
+	if not np.isfinite(rate) or rate <= 0:
+		raise ValueError(
+			"The response produces a non-positive or non-finite reference-model count rate."
+		)
+
+	return rate
+
+
+def rescale_rspmat(
+		rspmat,rspwt_lst,expo_lst,rega_lst,rspwt_method,extended=False,
+		shp_normalization="LEGACY",norm_rspmat=None,
+		ene_lo=None,ene_hi=None,iene_lo=None,iene_hi=None,flg=None,gamma=2.0,
+	):
 	"""
 	Rescale full response matrix (RSP) for different methods.
 
@@ -664,6 +737,22 @@ def rescale_rspmat(rspmat,rspwt_lst,expo_lst,rega_lst,rspwt_method,extended=Fals
 		Response weighting method.
 	extended : bool, optional
 		Extended or not. Defaults to ``False``.
+	shp_normalization : str, optional
+		Absolute normalization for an SHP-weighted response. ``LEGACY``
+		preserves the historical behavior; ``FLX`` and ``LMN`` preserve the
+		SHP response shape while adopting the corresponding physical scale.
+		Ignored when ``rspwt_method`` is not ``SHP``.
+	norm_rspmat : numpy.ndarray, optional
+		Raw auxiliary FLX- or LMN-weighted response matrix. Required for
+		``FLX``- or ``LMN``-normalized SHP.
+	ene_lo, ene_hi : numpy.ndarray, optional
+		Output-channel energy-bin edges used for physical SHP normalization.
+	iene_lo, iene_hi : numpy.ndarray, optional
+		Input model-energy-bin edges used for physical SHP normalization.
+	flg : numpy.ndarray, optional
+		Output-channel selection used for physical SHP normalization.
+	gamma : float, optional
+		Reference power-law photon index. Defaults to ``2.0``.
 
 	Returns
 	-------
@@ -680,64 +769,108 @@ def rescale_rspmat(rspmat,rspwt_lst,expo_lst,rega_lst,rspwt_method,extended=Fals
 		Stacked exposure.
 	rega_stk : float
 		Stacked region area.
+	shp_renorm : float
+		Additional FLX/LMN normalization applied to an SHP response. This is
+		``1.0`` for legacy SHP and ordinary FLX/LMN operation.
 	"""
+	rspwt_method = str(rspwt_method).upper()
+	shp_normalization = str(shp_normalization).upper()
+	rspwt_lst = np.asarray(rspwt_lst,dtype=np.float64)
+	expo_lst = np.asarray(expo_lst,dtype=np.float64)
+	rega_lst = np.asarray(rega_lst,dtype=np.float64)
+	shp_renorm = 1.0
+
+	# FLX and LMN share the same exposure/area rescaling. LMN introduces
+	# the additional factor of 1e60 below.
+	if extended:
+		physical_expo_stk = np.sum(expo_lst * rega_lst) / np.sum(rega_lst)
+		physical_rega_stk = 1.0
+		physical_scale = 1 / (physical_expo_stk * physical_rega_stk)
+	else:
+		physical_expo_stk = np.sum(expo_lst)
+		physical_rega_stk = 1.0
+		physical_scale = 1 / physical_expo_stk
+
 	if rspwt_method == "SHP":
-		# renormalize so that sum of rspwt_lst is 1
-		rspnorm = 1 / np.sum(rspwt_lst)
-		rspmat *= rspnorm
-		rspwt_lst *= rspnorm	# the updated rspwt_lst, for check only
-		# EXPOSURE and REGAREA is meaningless in SHP mode
-		expo_stk = np.sum(expo_lst)
-		rega_stk = 1.0
+		# First apply the existing SHP shape normalization.
+		shp_scale = 1 / np.sum(rspwt_lst)
+		rspmat *= shp_scale
+
+		if shp_normalization == "LEGACY":
+			final_scale = shp_scale
+			rspnorm = final_scale
+			expo_stk = np.sum(expo_lst)
+			rega_stk = 1.0
+
+		elif shp_normalization in ("FLX","LMN"):
+			if norm_rspmat is None:
+				raise ValueError(
+					"norm_rspmat is required for FLX- or LMN-normalized SHP."
+				)
+			if any(value is None for value in (ene_lo,ene_hi,iene_lo,iene_hi,flg)):
+				raise ValueError(
+					"Energy grids and channel selection are required for "
+					"FLX- or LMN-normalized SHP."
+				)
+
+			norm_scale = physical_scale
+			if shp_normalization == "LMN":
+				# Keep Xstack's existing convention: the fitted cflux value is
+				# the rest-frame luminosity divided by 1e60.
+				norm_scale *= 1e60
+			norm_rspmat *= norm_scale
+
+			# Anchor the matrices as they will actually appear in the output
+			# ARF+RMF. extract_arf_rmf_from_rspmat applies Xstack's RMF
+			# probability threshold and row renormalization, which can otherwise
+			# introduce a small mismatch between the in-memory full response and
+			# the response reconstructed from the written FITS files.
+			shp_specresp,shp_prob = extract_arf_rmf_from_rspmat(rspmat)
+			norm_specresp,norm_prob = extract_arf_rmf_from_rspmat(norm_rspmat)
+			shp_rate = get_folded_model_rate(
+				shp_prob * shp_specresp[:,np.newaxis],
+				ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
+			)
+			norm_rate = get_folded_model_rate(
+				norm_prob * norm_specresp[:,np.newaxis],
+				ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
+			)
+			shp_renorm = norm_rate / shp_rate
+			if not np.isfinite(shp_renorm) or shp_renorm <= 0:
+				raise ValueError("Invalid SHP normalization factor.")
+
+			rspmat *= shp_renorm
+			final_scale = shp_scale * shp_renorm
+			rspnorm = final_scale
+			expo_stk = physical_expo_stk
+			rega_stk = physical_rega_stk
+
+		else:
+			raise ValueError(
+				"shp_normalization must be `LEGACY`, `FLX`, or `LMN`."
+			)
 
 	elif rspwt_method == "FLX":
-		if extended:
-			# we take the solid-angle-weighted averaged exposure 
-			# as the stacked EXPOSURE, and 1 deg^2 as the stacked
-			# REGAREA, following X. Zhang+2024
-			expo_stk = np.sum(expo_lst * rega_lst) / np.sum(rega_lst)
-			# REGAREA renormalized to 1
-			rega_stk = 1.0
-			rscal_factor = 1 / (expo_stk * rega_stk)
-			# No normalization is performed, and thus chosen arbitrarily
-			rspnorm = 1.0
-		else:
-			# we take the summed exposure as the stacked EXPOSURE
-			expo_stk = np.sum(expo_lst)
-			# REGAREA not involved at all, and thus chosen arbitrarily
-			rega_stk = 1.0
-			# rescale factor
-			rscal_factor = 1 / expo_stk
-			# additional renormalization factor
-			rspnorm = 1.0
-		rspmat *= rscal_factor * rspnorm
-		rspwt_lst *= rscal_factor * rspnorm
+		final_scale = physical_scale
+		rspnorm = 1.0
+		expo_stk = physical_expo_stk
+		rega_stk = physical_rega_stk
+		rspmat *= final_scale
 
 	elif rspwt_method == "LMN":
-		if extended:
-			# the averaged exposure following X. Zhang+2024
-			expo_stk = np.sum(expo_lst * rega_lst) / np.sum(rega_lst)
-			# REGAREA renormalized to 1
-			rega_stk = 1.0
-			# rescale factor
-			rscal_factor = 1 / (expo_stk * rega_stk)
-			# set rspnorm to a large very large number as rspmat is typically very small
-			rspnorm = 1e60
-		else:
-			expo_stk = np.sum(expo_lst)
-			# REGAREA not involved at all, and thus chosen arbitrarily
-			rega_stk = 1.0
-			# rescale factor
-			rscal_factor = 1 / expo_stk
-			# set rspnorm to a large very large number as rspmat is typically very small
-			rspnorm = 1e60
-		rspmat *= rscal_factor * rspnorm
-		rspwt_lst *= rscal_factor * rspnorm
+		final_scale = physical_scale * 1e60
+		rspnorm = 1e60
+		expo_stk = physical_expo_stk
+		rega_stk = physical_rega_stk
+		rspmat *= final_scale
 
 	else:
-		raise Exception("Available method for ARF scaling ratio calculation: `FLX`, `LMN`, or `SHP` !")
-			
-	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk
+		raise ValueError(
+			"Available methods for response scaling are `SHP`, `FLX`, and `LMN`."
+		)
+
+	rspwt_lst *= final_scale
+	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk,shp_renorm
 
 
 def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):
@@ -1022,6 +1155,8 @@ def extract_arf_rmf_from_rspmat(rspmat):
 def write_arf(
 		arfene_lo,arfene_hi,specresp,arf_fname="stacked_arf.fits",
 		detchans=1000,expo=10,rega=1,rspwt_method="SHP",rspnorm=1,
+		shp_normalization="LEGACY",shp_renorm=1.0,
+		norm_elo=None,norm_ehi=None,norm_gamma=None,
 		srcid_lst=None,rspwt_lst=None,pi_totcts_lst=None,bkgpi_totcts_lst=None,flg=None,
 		spec_type="STACKED",z=None,run_cmd=None,
 ):
@@ -1053,6 +1188,14 @@ def write_arf(
 		mode, the rescaled RSP matrix has been multiplied by a very small 
 		number. Multiply your ``rspmat`` by ``rspnorm`` to bring it back to 
 		the appropriate number. Defaults to ``1``.
+	shp_normalization : str, optional
+		Absolute SHP normalization: ``LEGACY``, ``FLX``, or ``LMN``.
+	shp_renorm : float, optional
+		Additional FLX/LMN normalization applied to the SHP response.
+	norm_elo, norm_ehi : float, optional
+		Lower and upper rest-frame normalization-band edges in keV.
+	norm_gamma : float, optional
+		Reference power-law photon index used for physical SHP normalization.
 	srcid_lst : numpy.ndarray, optional
 		Source id list. Defaults to ``None``.
 	rspwt_lst : numpy.ndarray, optional
@@ -1104,6 +1247,17 @@ def write_arf(
 	hdu_specresp.header["EXPOSURE"] = (expo, "stacked exposure time [s]")
 	hdu_specresp.header["REGAREA"] = (rega, "stacked region area [deg^2]")
 	hdu_specresp.header["WTMETH"] = (rspwt_method, "response weighting method [SHP/FLX/LMN]")
+	if rspwt_method == "SHP":
+		hdu_specresp.header["SHPNORM"] = (shp_normalization, "SHP absolute normalization")
+		hdu_specresp.header["SHPRENOR"] = (shp_renorm, "additional SHP normalization factor")
+		if norm_elo is not None:
+			hdu_specresp.header["NORMELO"] = (norm_elo, "normalization-band lower edge [keV]")
+		if norm_ehi is not None:
+			hdu_specresp.header["NORMEHI"] = (norm_ehi, "normalization-band upper edge [keV]")
+		if norm_gamma is not None:
+			hdu_specresp.header["NORMGAM"] = (norm_gamma, "normalization reference photon index")
+		if shp_normalization == "LMN":
+			hdu_specresp.header["LMNSCALE"] = (1e60, "multiply cflux by this for erg/s")
 	hdu_specresp.header["CREATOR"] = "XSTACK"
 	hdu_specresp.header["HISTORY"] = f"{utc_now_iso()}: stacked source ARF created by Xstack v{VERSION} [{LASTUPDATE}] [{WEB}]"
 	add_run_cmd_history(hdu_specresp.header,run_cmd)

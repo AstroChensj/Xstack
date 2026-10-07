@@ -24,6 +24,7 @@ This page documents inputs for:
 |---|---|---|---|
 | `--prefix` | `prefix` | Output file prefix | `./results/stacked_` |
 | `--rsp_weight_method` | `rspwt_method` | Full-response weighting method: `SHP`, `FLX`, `LMN` | `SHP` |
+| `--shp_normalization` | `shp_normalization` | Absolute scale of an SHP-shaped response: `LEGACY`, `FLX`, or `LMN`; ignored outside standard-mode SHP | `LEGACY` |
 | `--rsp_proj_gamma` | `rspproj_gamma` | Prior photon index used by `SHP` projection | `2.0` |
 | `--flux_energy_lo` + `--flux_energy_hi` | `int_rng` | Integration range for `SHP` weights (rest-frame keV) | `1.0`, `2.3` keV |
 | `--nthreads` | `nthreads` | CPU threads for shifting/stacking pipeline | `10` (CLI), `1` (Python) |
@@ -72,6 +73,13 @@ For non-bootstrap runs, Xstack writes:
 In bootstrap mode, each realization gets an index in the output names.
 
 Stacked FITS outputs include command provenance in header `HISTORY` cards.
+
+For an SHP-weighted response, `LEGACY` reproduces the historical scale.
+`FLX` preserves the SHP response shape while anchoring its absolute scale to
+an FLX stack, so `cflux` reports rest-frame flux in
+$\mathrm{erg\,cm^{-2}\,s^{-1}}$. `LMN` similarly anchors to an LMN stack;
+multiply the resulting `cflux` value and uncertainty by $10^{60}$ to obtain
+rest-frame luminosity in $\mathrm{erg\,s^{-1}}$.
 
 ## Same-target Mode Notes
 

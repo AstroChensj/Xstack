@@ -100,6 +100,7 @@ def build_parser():
 	parser.add_argument("filelist", type=str, help="text file containing the file names")
 	parser.add_argument("--prefix", type=str, default="./results/stacked_", help="prefix for output stacked PI, BKGPI, ARF, and RMF files; defaults to ``'./results/stacked_'``")
 	parser.add_argument("--rsp_weight_method", type=str, default="SHP", help="method to calculate RSP weighting factor for each source; ``SHP``: assuming all sources have same spectral shape (only this mode would require flux_energy_lo and flux_energy_hi), ``FLX``: assuming all sources have same shape and energy flux (weigh by exposure time), ``LMN``: assuming all sources have same shape and luminosity (weigh by exposure/dist^2); defaults to ``SHP``")
+	parser.add_argument("--shp_normalization", type=str.upper, choices=("LEGACY","FLX","LMN"), default="LEGACY", help="absolute normalization for an SHP-weighted response; ``LEGACY`` keeps the historical SHP scale, ``FLX`` retains the SHP shape but adopts the FLX scale, and ``LMN`` retains the SHP shape but adopts the LMN scale; ignored unless standard-mode SHP weighting is active; defaults to ``LEGACY``")
 	parser.add_argument("--rsp_project_gamma", type=float, default=2.0, help="prior photon index value for projecting RSP matrix onto the output energy channel. This is used in the ``SHP`` method, to calculate the weight of each response; defaults to 2.0 (typical for AGN).")
 	parser.add_argument("--flux_energy_lo", type=float, default=1.0, help="lower end of the energy range in keV for computing flux, used only when ``rsp_weight_method=SHP``; defaults to ``1.0``")
 	parser.add_argument("--flux_energy_hi", type=float, default=2.3, help="upper end of the energy range in keV for computing flux; used only when ``rsp_weight_method=SHP``; defaults to ``2.3``")
@@ -251,6 +252,7 @@ def main(argv=None):
 		nh_lst=nh_lst,                                  # the Galactic absorption list (optional, in units of 1 cm^{-2})
 		srcid_lst=None,                                 # the source id list (optional)
 		rspwt_method=args.rsp_weight_method,            # method to calculate response weighting factor for each source (recommended: SHP)
+		shp_normalization=args.shp_normalization,       # absolute SHP normalization: LEGACY, FLX, or LMN
 		rspproj_gamma=args.rsp_project_gamma,           # prior photon index for projecting RSP matrix onto the output energy channel
 		int_rng=(args.flux_energy_lo,args.flux_energy_hi), # if `arfscal_method`=`SHP`, choose the range to calculate flux
 		sample_rmf=None,                                # the sample RMF to read input/output energy bin edge (if not specified, the first RMF in `rmffile_lst` will be used)

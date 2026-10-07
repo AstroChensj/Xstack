@@ -206,9 +206,20 @@ data-driven weight from the background-subtracted counts and the projected
 full response in the chosen integration band. This is usually the best starting
 point when individual spectra have enough counts (roughly ten or more).
 
-The trade-off is intentional: the final vertical normalization does not carry
-a simple physical flux unit. `SHP` is designed to answer *what does the average
-shape look like?*
+Historically, that shape came with an intentionally non-physical vertical
+scale (`shp_normalization=LEGACY`). Xstack can now give the same SHP shape a
+more useful ruler without allowing FLX or LMN weights to change it. It builds
+an auxiliary FLX- or LMN-weighted response, folds the same reference power law
+through both responses in the chosen rest-frame band, and applies their rate
+ratio as one global multiplier to the SHP response. The energy-dependent SHP
+shape is untouched.
+
+With `shp_normalization=FLX`, `cflux` therefore reports a rest-frame flux in
+$\mathrm{erg\,cm^{-2}\,s^{-1}}$. With `shp_normalization=LMN`, Xstack keeps
+the existing LMN numerical convention: multiply `cflux` and its uncertainty by
+$10^{60}$ to obtain rest-frame luminosity in $\mathrm{erg\,s^{-1}}$. The
+anchoring is exact for the selected integration band and reference photon
+index; both should be reported with the result.
 
 ### `FLX`: assume a common flux
 
