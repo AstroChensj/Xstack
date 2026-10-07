@@ -70,6 +70,11 @@ class XstackRunner:
           luminosity (:math:`\mathrm{erg}\ \mathrm{s}^{-1}` for point 
           sources while :math:`\mathrm{erg}\ \mathrm{s}^{-1}\ \mathrm{deg}^{-2}`
           for extended sources)
+	shp_normalization : str, optional
+		Absolute normalization for an SHP-weighted response. ``LEGACY`` keeps
+		the historical SHP scale, while ``FLX`` and ``LMN`` preserve the SHP
+		response shape and adopt the corresponding physical scale. Ignored
+		outside standard-mode SHP stacking. Defaults to ``LEGACY``.
 
     rspproj_gamma : float, optional
         The prior photon index value for projecting RSP matrix onto 
@@ -154,7 +159,8 @@ class XstackRunner:
     def __init__(
             self,pifile_lst,arffile_lst,rmffile_lst,z_lst,
             bkgpifile_lst=None,nh_lst=None,srcid_lst=None,
-            rspwt_method="SHP",rspproj_gamma=2.0,int_rng=(1.0,2.3),
+            rspwt_method="SHP",shp_normalization="LEGACY",
+            rspproj_gamma=2.0,int_rng=(1.0,2.3),
             sample_rmf=None,sample_arf=None,nh_file=None,
             Nbkggrp=10,ene_trc=None,extended=False,nthreads=1,
             bootstrap=False,num_bootstrap=10,bootstrap_portion=1.0,
@@ -187,7 +193,8 @@ class XstackRunner:
             self.srcid_lst = srcid_lst
         else:
             self.srcid_lst = np.arange(len(pifile_lst))
-        self.rspwt_method = rspwt_method
+        self.rspwt_method = str(rspwt_method).upper()
+        self.shp_normalization = str(shp_normalization).upper()
         self.rspproj_gamma = rspproj_gamma
         self.int_rng = int_rng
         if sample_rmf is None:
@@ -211,6 +218,18 @@ class XstackRunner:
         self.run_cmd = run_cmd
         self.same_target = same_target
         self.do_cache = do_cache
+
+        self.use_shp_normalization = (
+            not self.same_target and self.rspwt_method == "SHP"
+        )
+        if self.use_shp_normalization and self.shp_normalization not in ("LEGACY","FLX","LMN"):
+            raise ValueError(
+                "shp_normalization must be `LEGACY`, `FLX`, or `LMN`."
+            )
+        self.do_shp_physical_normalization = (
+            self.use_shp_normalization
+            and self.shp_normalization in ("FLX","LMN")
+        )
 
         #--- read ARF energy edges and RMF energy edges
         ##--- NOTE: this assumes RMF energies are identical across the sample (i.e., from the same instrument) !!!
@@ -269,12 +288,17 @@ class XstackRunner:
         self.bkgpi_stk_rlz = [np.zeros_like(self.ENE_CE,dtype=np.float64) for _ in range(self.num_bootstrap)]   # realizations of stacked bkgpi spectrum (same)
         self.rspmat_stk_rlz = [np.zeros_like(self.PROB,dtype=np.float64) for _ in range(self.num_bootstrap)]    # realizations of stacked full response (num_bootstrap, Niene, Nene)
         # ** np.float64 is very important for LMN mode where rspmat value is very small **
+        if self.do_shp_physical_normalization:
+            self.norm_rspmat_stk_rlz = [np.zeros_like(self.PROB,dtype=np.float64) for _ in range(self.num_bootstrap)]
+        else:
+            self.norm_rspmat_stk_rlz = None
         ##--- below will be overwritten later, so set to None
         self.pierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
         self.bkgpierr_stk_rlz = [None for _ in range(self.num_bootstrap)]
         self.specresp_stk_rlz = [None for _ in range(self.num_bootstrap)]   # realizations of stacked ARF effective area curve, (num_bootstrap, Niene)
         self.prob_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked RMF probability matrix, (num_bootstrap, Niene, Nene)
         self.rspnorm_rlz = [None for _ in range(self.num_bootstrap)]        # realizations of stacked response norm (num_bootstrap,)
+        self.shp_renorm_rlz = [1.0 for _ in range(self.num_bootstrap)]      # additional physical SHP normalization
         self.expo_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked exposure (num_bootstrap,)
         self.rega_stk_rlz = [None for _ in range(self.num_bootstrap)]       # realizations of stacked region area (num_bootstrap,)
 
@@ -333,13 +357,18 @@ class XstackRunner:
         self.main_logger.info(f"NH file: {self.nh_file if self.nh_file is not None else 'None'}")
         self.main_logger.info(f"RSP weighting method: {self.rspwt_method}")
         if self.rspwt_method == "SHP":
+            self.main_logger.info(f"SHP absolute normalization: {self.shp_normalization}")
             self.main_logger.info(f"RSP projection gamma: {self.rspproj_gamma}")
             self.main_logger.info(f"Flux calculation range: {self.int_rng[0]} -- {self.int_rng[1]} keV")
+        elif self.shp_normalization != "LEGACY":
+            self.main_logger.info("`shp_normalization` is ignored because SHP weighting is not active.")
         self.main_logger.info(f"ARF Truncation energy: {self.ene_trc} keV")
         self.main_logger.info(f"Source type: {'extended sources' if self.extended else 'point sources'}")
         self.main_logger.info(f"Number of CPUs used for shifting RMF: {self.nthreads}")
         self.main_logger.info(f"Number of background groups: {self.Nbkggrp}")
         self.main_logger.info(f"Same-target mode: {'TRUE' if self.same_target else 'FALSE'}")
+        if self.same_target and self.shp_normalization != "LEGACY":
+            self.main_logger.info("`shp_normalization` is ignored in same-target mode.")
         self.main_logger.info(f"Bootstrap: {'TRUE' if self.bootstrap else 'FALSE'}")
         if self.bootstrap:
             self.main_logger.info(f"Number of realizations: {self.num_bootstrap}")
@@ -409,13 +438,15 @@ class XstackRunner:
             t0 = time.time()
             self.main_logger.info("")
             self.main_logger.info(f"=== Realization {k:0{len(str(self.num_bootstrap))}d} ===")
-            for i,(pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,arffene,fene,expo,rega,msg) in enumerate(tqdm(results,total=self.Nsrc,desc="stacking")):
+            for i,(pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,norm_rspwt,arffene,fene,expo,rega,msg) in enumerate(tqdm(results,total=self.Nsrc,desc="stacking")):
                 # NOTE: bwt_src: how many times the i-th source appears in the k-th bootstrap realization (bootstrap weight)
                 bwt_src = self.bwt_lst_rlz[k][i]
                 ##--- stacking pi & rsp
                 self.pi_stk_rlz[k] += pi_sft * bwt_src
                 self.bkgpi_stk_rlz[k] += bkgpi_sft * bkgscal * bwt_src
                 self.rspmat_stk_rlz[k] += rspmat_sft * rspwt * bwt_src
+                if self.do_shp_physical_normalization:
+                    self.norm_rspmat_stk_rlz[k] += rspmat_sft * norm_rspwt * bwt_src
                 ##--- saving meta-data for later renormalization
                 self.bkgscal_lst_rlz[k].append(bkgscal)                         # (num_bootstrap, Nsrc)
                 self.rspwt_lst_rlz[k].append(rspwt)                             # (same)
@@ -465,11 +496,22 @@ class XstackRunner:
         t0 = time.time()
         for k in range(self.num_bootstrap):
             ##--- renormalization
-            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k] = rescale_rspmat(
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],self.shp_renorm_rlz[k] = rescale_rspmat(
                 rspmat=self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
                 expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
                 rspwt_method=self.rspwt_method,extended=self.extended,
+                shp_normalization=self.shp_normalization,
+                norm_rspmat=self.norm_rspmat_stk_rlz[k] if self.do_shp_physical_normalization else None,
+                ene_lo=self.ENE_LO,ene_hi=self.ENE_HI,
+                iene_lo=self.IENE_LO,iene_hi=self.IENE_HI,
+                flg=self.int_flg,gamma=self.rspproj_gamma,
             )
+            if self.do_shp_physical_normalization:
+                self.main_logger.info(
+                    f"SHP {self.shp_normalization} normalization factor "
+                    f"(realization {k}): {self.shp_renorm_rlz[k]:.16e}"
+                )
+                self.norm_rspmat_stk_rlz[k] = None
             ##--- extract ARF & RMF from the stacked full response
             self.specresp_stk_rlz[k],self.prob_stk_rlz[k] = extract_arf_rmf_from_rspmat(self.rspmat_stk_rlz[k])
         self.main_logger.info(f"Total time used for ARF & RMF extraction: {time.time()-t0} s.")
@@ -491,6 +533,8 @@ class XstackRunner:
             write_arf(
                 arfene_lo=self.IENE_LO,arfene_hi=self.IENE_HI,specresp=self.specresp_stk_rlz[k],arf_fname=self.o_arf_fname_rlz[k],
                 detchans=len(self.CHANNEL),expo=self.expo_stk_rlz[k],rega=self.rega_stk_rlz[k],rspwt_method=self.rspwt_method,rspnorm=self.rspnorm_rlz[k],
+                shp_normalization=self.shp_normalization,shp_renorm=self.shp_renorm_rlz[k],
+                norm_elo=self.int_rng[0],norm_ehi=self.int_rng[1],norm_gamma=self.rspproj_gamma,
                 srcid_lst=self.srcid_lst_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],pi_totcts_lst=self.pi_totcts_lst_rlz[k],bkgpi_totcts_lst=self.bkgpi_totcts_lst_rlz[k],flg=self.int_flg,spec_type="STACKED",z=None,
                 run_cmd=self.run_cmd,
             )
@@ -528,7 +572,12 @@ class XstackRunner:
         self.main_logger.info("****** Response weighting factor for each source ******")
         self.main_logger.info(f"Your sources are {'extended sources' if self.extended else 'point sources'}.")
         if self.rspwt_method == "SHP":
-            self.main_logger.info("`SHP` mode: assuming all sources have similar spectral shape, and weights calculated as COUNTS/ARF (normalized). This gives the most robust estimate of average spectral shape, but the y-axis of stacked spectrum would not carry physical meaning.")
+            if self.shp_normalization == "LEGACY":
+                self.main_logger.info("`SHP/LEGACY` mode: assuming all sources have similar spectral shape, with weights calculated as COUNTS/ARF (normalized). The y-axis does not carry a physical flux or luminosity meaning.")
+            elif self.shp_normalization == "FLX":
+                self.main_logger.info("`SHP/FLX` mode: the response shape is determined by SHP weights and its absolute scale is anchored to FLX. The cflux result is interpreted as rest-frame flux in erg/cm^2/s.")
+            elif self.shp_normalization == "LMN":
+                self.main_logger.info("`SHP/LMN` mode: the response shape is determined by SHP weights and its absolute scale is anchored to LMN. Multiply the cflux result and its uncertainties by 1e60 to obtain rest-frame luminosity in erg/s.")
         elif self.rspwt_method == "FLX":
             self.main_logger.info(f"`FLX` mode: assuming all sources have similar spectral shape + flux [{'erg/cm^2/s/deg^2' if self.extended else 'erg/cm^2/s'}], and weights calculated as {'EXPOSURE*REGAREA' if self.extended else 'EXPOSURE'}. Spectral shape may be biased if fluxes vary significantly among the sample. The y-axis of stacked spectrum gives the average flux.")
         elif self.rspwt_method == "LMN":
@@ -569,6 +618,9 @@ class XstackRunner:
         rspwt : float
             Response scaling weight. Note, a further renormalization 
             will be needed after stacking.
+        norm_rspwt : float or None
+            FLX/LMN response weight used only to construct the auxiliary
+            normalization response for physically normalized SHP.
         arffene : float
             First contributing energy from ARF.
         fene : float
@@ -666,6 +718,12 @@ class XstackRunner:
             specresp=rsp1d_sft,pi=pi_sft,z=z,bkgpi=bkgpi_sft,bkgscal=bkgscal,expo=expo,ene_wd=self.ENE_WD,flg=self.int_flg,
             rspwt_method=self.rspwt_method,extended=self.extended,rega=rega,
         )
+        norm_rspwt = None
+        if self.do_shp_physical_normalization:
+            norm_rspwt = compute_rspwt(
+                specresp=rsp1d_sft,pi=pi_sft,z=z,bkgpi=bkgpi_sft,bkgscal=bkgscal,expo=expo,ene_wd=self.ENE_WD,flg=self.int_flg,
+                rspwt_method=self.shp_normalization,extended=self.extended,rega=rega,
+            )
         
         #--- looking for effective first energy for later visualization
         arf_sft = project_rspmat(
@@ -694,7 +752,7 @@ class XstackRunner:
             else:
                 msg = f"{pifile_rf}: conflicting redshift (cache mismatch)"
 
-        return pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,arffene,fene,expo,rega,msg
+        return pi_sft,bkgpi_sft,bkgscal,rspmat_sft,rspwt,norm_rspwt,arffene,fene,expo,rega,msg
 
 
     def _load_or_shift_pi(
@@ -934,7 +992,7 @@ class XstackRunner:
         self.main_logger.info("************** Extracting ARF & RMF ... ***************")
         t0 = time.time()
         for k in range(self.num_bootstrap):
-            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k] = rescale_rspmat(
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],_ = rescale_rspmat(
                 rspmat=self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
                 expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
                 rspwt_method="FLX",extended=self.extended,
