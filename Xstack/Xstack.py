@@ -25,7 +25,7 @@ from Xstack.utils.pi import (
 from Xstack.utils.rsp import (
     read_rsp,shift_rsp,read_rsp_from_arf_rmf,
     get_prob,compute_rspwt,rescale_rspmat,
-    project_rspmat,extract_arf_rmf_from_rspmat,
+    project_rspmat,get_folded_model_rate,extract_arf_rmf_from_rspmat,
     get_tlmin_from_header,
     write_arf,write_rmf
 )
@@ -496,7 +496,7 @@ class XstackRunner:
         t0 = time.time()
         for k in range(self.num_bootstrap):
             ##--- renormalization
-            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],self.shp_renorm_rlz[k] = rescale_rspmat(
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],self.shp_renorm_rlz[k],norm_rate = rescale_rspmat(
                 rspmat=self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
                 expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
                 rspwt_method=self.rspwt_method,extended=self.extended,
@@ -506,14 +506,30 @@ class XstackRunner:
                 iene_lo=self.IENE_LO,iene_hi=self.IENE_HI,
                 flg=self.int_flg,gamma=self.rspproj_gamma,
             )
+            ##--- extract ARF & RMF from the stacked full response
+            self.specresp_stk_rlz[k],self.prob_stk_rlz[k] = extract_arf_rmf_from_rspmat(self.rspmat_stk_rlz[k])
             if self.do_shp_physical_normalization:
+                # Correct the final extracted ARF directly for the last few
+                # rounding units introduced by RMF thresholding and row
+                # renormalization. The RMF shape remains unchanged.
+                final_rate = get_folded_model_rate(
+                    self.prob_stk_rlz[k] * self.specresp_stk_rlz[k][:,np.newaxis],
+                    self.ENE_LO,self.ENE_HI,self.IENE_LO,self.IENE_HI,
+                    self.int_flg,gamma=self.rspproj_gamma,
+                )
+                output_correction = norm_rate / final_rate
+                if not np.isfinite(output_correction) or output_correction <= 0:
+                    raise ValueError("Invalid final SHP output-normalization factor.")
+                self.specresp_stk_rlz[k] *= output_correction
+                self.rspmat_stk_rlz[k] *= output_correction
+                self.rspnorm_rlz[k] *= output_correction
+                self.rspwt_lst_rlz[k] *= output_correction
+                self.shp_renorm_rlz[k] *= output_correction
                 self.main_logger.info(
                     f"SHP {self.shp_normalization} normalization factor "
                     f"(realization {k}): {self.shp_renorm_rlz[k]:.16e}"
                 )
                 self.norm_rspmat_stk_rlz[k] = None
-            ##--- extract ARF & RMF from the stacked full response
-            self.specresp_stk_rlz[k],self.prob_stk_rlz[k] = extract_arf_rmf_from_rspmat(self.rspmat_stk_rlz[k])
         self.main_logger.info(f"Total time used for ARF & RMF extraction: {time.time()-t0} s.")
 
         #--- finally, write fits files
@@ -992,7 +1008,7 @@ class XstackRunner:
         self.main_logger.info("************** Extracting ARF & RMF ... ***************")
         t0 = time.time()
         for k in range(self.num_bootstrap):
-            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],_ = rescale_rspmat(
+            self.rspmat_stk_rlz[k],self.rspnorm_rlz[k],self.rspwt_lst_rlz[k],self.expo_stk_rlz[k],self.rega_stk_rlz[k],_,_ = rescale_rspmat(
                 rspmat=self.rspmat_stk_rlz[k],rspwt_lst=self.rspwt_lst_rlz[k],
                 expo_lst=self.expo_lst_rlz[k],rega_lst=self.rega_lst_rlz[k],
                 rspwt_method="FLX",extended=self.extended,

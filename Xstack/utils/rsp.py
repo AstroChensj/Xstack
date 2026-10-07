@@ -768,6 +768,9 @@ def rescale_rspmat(
 	shp_renorm : float
 		Additional FLX/LMN normalization applied to an SHP response. This is
 		``1.0`` for legacy SHP and ordinary FLX/LMN operation.
+	norm_rate : float or None
+		Folded reference-model rate of the auxiliary FLX/LMN response. Used
+		to remove final output-representation rounding in the caller.
 	"""
 	rspwt_method = str(rspwt_method).upper()
 	shp_normalization = str(shp_normalization).upper()
@@ -775,6 +778,7 @@ def rescale_rspmat(
 	expo_lst = np.asarray(expo_lst,dtype=np.float64)
 	rega_lst = np.asarray(rega_lst,dtype=np.float64)
 	shp_renorm = 1.0
+	norm_rate = None
 
 	# FLX and LMN share the same exposure/area rescaling. LMN introduces
 	# the additional factor of 1e60 below.
@@ -836,24 +840,6 @@ def rescale_rspmat(
 				raise ValueError("Invalid SHP normalization factor.")
 
 			rspmat *= shp_renorm
-			# Multiplying the full matrix can move the final extracted RMF by a
-			# few floating-point rounding units. Refine the scalar against the
-			# final ARF+RMF representation so its folded rate meets the physical
-			# target rather than merely the pre-scaled full-matrix target.
-			for _ in range(3):
-				final_specresp,final_prob = extract_arf_rmf_from_rspmat(rspmat)
-				final_rate = get_folded_model_rate(
-					final_prob * final_specresp[:,np.newaxis],
-					ene_lo,ene_hi,iene_lo,iene_hi,flg,gamma=gamma,
-				)
-				if np.isclose(final_rate,norm_rate,rtol=1e-14,atol=0.0):
-					break
-				correction = norm_rate / final_rate
-				if not np.isfinite(correction) or correction <= 0:
-					raise ValueError("Invalid SHP normalization refinement factor.")
-				rspmat *= correction
-				shp_renorm *= correction
-
 			final_scale = shp_scale * shp_renorm
 			rspnorm = final_scale
 			expo_stk = physical_expo_stk
@@ -884,7 +870,7 @@ def rescale_rspmat(
 		)
 
 	rspwt_lst *= final_scale
-	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk,shp_renorm
+	return rspmat,rspnorm,rspwt_lst,expo_stk,rega_stk,shp_renorm,norm_rate
 
 
 def correct_arf(specresp,arfene_lo,arfene_hi,factor,nhene_lo,nhene_hi,nh):
